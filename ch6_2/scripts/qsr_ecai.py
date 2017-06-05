@@ -14,7 +14,9 @@ from qsrlib_io.world_trace import Object_State, World_Trace
 from tf.transformations import euler_from_quaternion
 import pdb
 from random import randint
-from ECAI_videos_segmented_by_day import segmented_videos
+#from ch6_2 import ECAI_videos_segmented_by_day #import segmented_videos
+import ch6_2.ECAI_videos_segmented_by_day as seg
+
 
 def pretty_print_world_qsr_trace(which_qsr, qsrlib_response_message):
     print(which_qsr, "request was made at ", str(qsrlib_response_message.req_made_at)
@@ -62,7 +64,6 @@ def get_point_cloud_objects(path):
                 (labs,xyz) = line.replace("\n","").split(":")
                 x,y,z = xyz.split(",")
                 objects["object_%s_%s" % (file_num,file_num)] = (float(x),float(y),float(z)) # hack to keep file_num when object type is passed to QSRLib
-    # import pdb; pdb.set_trace()
     return objects
 
 def get_sk_info(f1):
@@ -250,24 +251,11 @@ if __name__ == "__main__":
     # parameters
     # ****************************************************************************************************
     data_subset = False
-    frame_rate_reduce = 2  # drop every other frame - before median filter applies
-    mean_window = 3 # use scipy medfilt with the window_size - after down sampling frame rate
-    qsr_median_window = 3
+    frame_rate_reduce = 1     # drop every other frame - before median filter applies
+    mean_window = 1 # use scipy medfilt with the window_size - after down sampling frame rate
+    qsr_median_window = 10
     tpcc = True
     objects_inc_type = True
-    using_language = False
-
-    # ****************************************************************************************************
-    # parse command line arguments
-    # options = sorted(qsrlib.qsrs_registry.keys())
-    # print(options)
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("qsr", help="choose qsr: %s" % options, type=str)
-    # args = parser.parse_args()
-    # if args.qsr in options:
-    #     which_qsr = args.qsr
-    # else:
-    #     raise ValueError("qsr not found, keywords: %s" % options)
 
     # create a QSRlib object if there isn't one already
     qsrlib = QSRlib()
@@ -285,16 +273,6 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # data directories
     # ****************************************************************************************************
-    if data_subset:
-        file = open(path+"/selected_clips.txt", 'r')
-        selected_clips_dic = {}
-        for cnt, line in enumerate(file.readlines()):
-            if cnt % 2 == 0:
-                key = line[:-1]
-                selected_clips_dic[key] = []
-            else:
-                selected_clips_dic[key].extend(line[:-1].split())
-        selected_clips = [x for y in selected_clips_dic.itervalues() for x in y]
 
     directory = os.path.join(path, 'dataset_segmented_15_12_16')
     qsr_dir = os.path.join(directory, "QSR_path")
@@ -308,13 +286,12 @@ if __name__ == "__main__":
     qsr_path = os.path.join(qsr_dir, "run_%s" % str(run+1))
     if not os.path.exists(qsr_path): os.makedirs(qsr_path)
     print "qsr path >", qsr_path
-    # if not os.path.exists(qsr_path + "/WorldTraces"): os.makedirs(qsr_path + "/WorldTraces")
 
     # ****************************************************************************************************
     # Dynamic Args list
     # ****************************************************************************************************
     which_qsr=["argd", "qtcbs"]
-    objects_used = ['left_hand', 'right_hand'] #, 'torso']
+    objects_used = ['left_hand', 'right_hand', 'torso']
 
     qsrs_for = []
     for selected_joint in objects_used:
@@ -335,13 +312,12 @@ if __name__ == "__main__":
     dynamic_args = { "qtcbs": {"qsrs_for" : qsrs_for, "no_collapse": True, "quantisation_factor":0.1, "validate":False },
                      "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},
                     #"qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4}, "object_types": object_types},
-                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 1, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": True}, "object_types": object_types},
+                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
                      "filters" : {"median_filter": {"window": qsr_median_window}}}
 
     # ****************************************************************************************************
     # Write out a file of arguments
     # ****************************************************************************************************
-
     with open(os.path.join(qsr_path, 'dynamic_args.txt'),'w') as f1:
         f1.write('dataset: %s \n \n' % directory)
         f1.write('subset of data: %s \n \n' % data_subset)
@@ -354,10 +330,9 @@ if __name__ == "__main__":
         f1.write('frame_rate_reduce: %s \n \n' % frame_rate_reduce)
         f1.write('mean_window: %s \n \n' % mean_window)
         f1.write('qsr median window: %s \n \n' % qsr_median_window)
-        f1.write('using language input: %s \n \n' % using_language)
 
     if tpcc:
-        objects_used_tpcc = ['left_hand', 'right_hand', 'left_shoulder', 'right_shoulder']
+        objects_used_tpcc = ['left_hand', 'right_hand', 'left_shoulder', 'right_shoulder', 'left_knee', 'right_knee']
         # qsrs_for = [('head', 'torso', ob) if ob not in ['head', 'torso'] and ob != 'head-torso' else () for ob in object_types.keys()]
         qsrs_for_tpcc = [('head', 'torso', ob) for ob in objects_used_tpcc]
 
@@ -375,7 +350,7 @@ if __name__ == "__main__":
             f1.write('qsr median window: %s \n \n' % qsr_median_window)
 
     ### load file of dates vs clips
-    videos_by_day = segmented_videos()
+    videos_by_day = seg.segmented_videos()
 
     counter = 1
     # for counter, task in enumerate(sorted(os.listdir(directory))):
@@ -386,13 +361,10 @@ if __name__ == "__main__":
             # if '196' in task or '211' in task: continue
             video = "%s.p" % task
             d_video = os.path.join(directory, task)
-            if data_subset:
-                if task.replace("vid", "") not in selected_clips: continue
 
             # ****************************************************************************************************
             # open file
             # ****************************************************************************************************
-
             d_sk = os.path.join(d_video, 'skeleton')
             d_robot = os.path.join(d_video, 'robot')
             try:
@@ -412,20 +384,10 @@ if __name__ == "__main__":
                 continue
 
             # ****************************************************************************************************
-            # Sentance annotation of the videos are added to the feature space
-            # ****************************************************************************************************
-            if using_language:
-                words, hist = get_sentance_annotation(task)
-                # if randint(0,9) not in [0,1,2]:
-                #     hist, words = [], []
-                language_feature_space = sentance_featurespace(hist, words)
-
-            # ****************************************************************************************************
-            # read files
+            # read human pose and robot files
             # ****************************************************************************************************
             sk_files = [f for f in sorted(os.listdir(d_sk)) if os.path.isfile(os.path.join(d_sk, f))]
             r_files = [f for f in sorted(os.listdir(d_robot)) if os.path.isfile(os.path.join(d_robot,f))]
-
 
             # ****************************************************************************************************
             # skeleton and robot data
@@ -526,9 +488,6 @@ if __name__ == "__main__":
             # add TPCC relations - from camera_world
             # ****************************************************************************************************
             if tpcc:
-                # ****************************************************************************************************
-                # Call QSRLib again
-                # ****************************************************************************************************
                 req = QSRlib_Request_Message(which_qsr="tpcc", input_data=camera_world, dynamic_args=dynamic_args_tpcc)
                 camera_response_message = qsrlib.request_qsrs(req_msg=req)
                 # pretty_print_world_qsr_trace("tpcc", camera_response_message)
@@ -536,23 +495,19 @@ if __name__ == "__main__":
             else:
                 feature_spaces =[map_response_message.qstag.graphlets]
 
-            if using_language:
-                feature_spaces += [language_feature_space]
-
             # ****************************************************************************************************
             # Create sparse histogram and code words
             # ****************************************************************************************************
             histogram = np.array([0] * (global_codebook.shape[0]))
             for cnt, f in enumerate(feature_spaces):
                 for freq, hash in zip(f.histogram, f.code_book):
+                    hash_s = "{:20d}".format(hash).lstrip() # string
 
-                    if isinstance(hash, int): hash_str = "{:20d}".format(hash).lstrip()
-                    else: hash_str = hash
                     try:
-                        ind = np.where(global_codebook == hash_str)[0][0]
+                        ind = np.where(global_codebook == hash_s)[0][0]
                         histogram[ind] += freq
                     except IndexError:
-                        global_codebook = np.append(global_codebook, hash_str)
+                        global_codebook = np.append(global_codebook, hash_s)
                         histogram = np.append(histogram, freq)
                         all_graphlets = np.append(all_graphlets, f.graphlets[hash])
 
@@ -565,7 +520,6 @@ if __name__ == "__main__":
             f = open(qsr_path + "/%s.p" % task, "w")
             pickle.dump(data_to_store, f, 2)
             f.close()
-            # sys.exit(1)
 
     data_to_store = (global_codebook, all_graphlets, uuids, labels)
     f =open(qsr_path + "/codebook_data.p", "w")
