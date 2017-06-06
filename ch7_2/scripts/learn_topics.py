@@ -85,16 +85,6 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     f1 = open(directory+name, 'w')
     pickle.dump(model.topic_word_, f1, 2)
     f1.close()
-    
-    name = '/TopicData/code_book.p'
-    f1 = open(directory+name, 'w')
-    pickle.dump(code_book, f1, 2)
-    f1.close()
-
-    name = '/TopicData/graphlets.p'
-    f1 = open(directory+name, 'w')
-    pickle.dump(graphlets, f1, 2)
-    f1.close()
 
     # ****************************************************************************************************
     # investigate the relevant words in each topic, and see which documents are classified into each topic
@@ -406,7 +396,7 @@ if __name__ == "__main__":
     # Term Frequency
     # ****************************************************************************************************
     term_freq, online_data, code_book, graphlets = fr.load_term_frequency(directory, run)
-    low_pass_instance = 15
+    low_pass_instance = 3
 
     term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
 
@@ -418,6 +408,7 @@ if __name__ == "__main__":
 
     supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
 
+    import pdb; pdb.set_trace()
     # ****************************************************************************************************
     # call batch LSA
     # ****************************************************************************************************
@@ -437,8 +428,7 @@ if __name__ == "__main__":
 
     directory = os.path.join(directory, "QSR_path/run_%s" % run)
 
-    raw_input("run LDA:")
-    run_topic_model(term_freq_red, code_book_red, graphlets_red, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
+    run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
     print "LDA done"
 
     # ****************************************************************************************************
@@ -452,6 +442,5 @@ if __name__ == "__main__":
     kappa = 0.7
     batchsize = 5
 
-    raw_input("run online LDA:")
     online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0,kappa,batchsize, class_thresh)
     print "Online LDA done"

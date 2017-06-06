@@ -7,14 +7,15 @@ import numpy as np
 import cPickle as pickle
 import getpass
 
-def term_frequency(directory, run):
+def load_term_frequency(directory, run):
 
     # ****************************************************************************************************
     # load word counts
     # ****************************************************************************************************
-    uuids, wordids, wordcts = [], [], []
-    directory += "/QSR_path/run_%s" % run
+    r = "QSR_path/run_%s" % run
+    directory = os.path.join(directory, r)
     print "directory: ", directory
+
     if not os.path.exists(os.path.join(directory, 'TopicData')): os.makedirs(os.path.join(directory, 'TopicData'))
     if not os.path.exists(os.path.join(directory, 'oldaData')): os.makedirs(os.path.join(directory, 'oldaData'))
 
@@ -26,6 +27,7 @@ def term_frequency(directory, run):
     graphlets = loaded_data[1]
     codebook_lengh = len(code_book)
 
+    uuids, wordids, wordcts = [], [], []
     true_videos, true_labels = [], []
     num_of_vids = len(os.listdir(directory))
     for task in xrange(1, num_of_vids+1):
@@ -52,7 +54,7 @@ def term_frequency(directory, run):
     # ****************************************************************************************************
     term_freq = term_frequency_mat(codebook_lengh, wordids, wordcts)
 
-    return term_freq, online_data
+    return term_freq, online_data, code_book, graphlets
 
 
 def term_frequency_mat(codebook_lengh, wordids, wordcnts):
@@ -74,3 +76,33 @@ def term_frequency_mat(codebook_lengh, wordids, wordcnts):
     #         print ">", wordids[e], wordcnts[e]
     # pdb.set_trace()
     return feature_space
+
+
+def high_instance_code_words(term_frequency, code_book, graphlets, low_instance):
+    """This essentially takes the feature space created over all events, and removes any
+    feature that is not witnessed a minimum number of times (low_instance param).
+    """
+    ## Number of rows with non zero element :
+    keep_rows = np.where((term_frequency != 0).sum(axis=0) > low_instance)[0]
+    ## Sum of the whole column: term_frequency.sum(axis=0) > low_instance
+    remove_inds = np.where((term_frequency != 0).sum(axis=0) <= low_instance)[0]
+
+    print "orig feature space: %s. remove: %s. new space: %s." % (len(term_frequency.sum(axis=0)), len(remove_inds), len(keep_rows))
+
+    #keep only the columns of the feature space which have more than low_instance number of occurances.
+    selected_features = term_frequency.T[keep_rows]
+    new_term_frequency = selected_features.T
+    print "new feature space shape: ", new_term_frequency.shape
+
+    # # Code Book (1d np array of hash values)
+    new_code_book = code_book[keep_rows]
+    print "  new code book len: ", len(new_code_book)
+
+    # # Graphlets book (1d np array of igraphs)
+    new_graphlets = graphlets[keep_rows]
+    print "  new graphlet book len: ", len(new_graphlets)
+
+    print "removed low (%s) instance graphlets" % low_instance
+    print "shape = ", new_term_frequency.shape
+
+    return new_term_frequency, new_code_book, new_graphlets
