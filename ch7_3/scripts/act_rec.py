@@ -35,10 +35,10 @@ from std_msgs.msg import String, Header
 # from shapely.geometry import Polygon, Point
 import cPickle as pickle
 import time
-
-import ch7_3.skeleton_manager as sk
+from sklearn import metrics
+# import ch7_3.skeleton_manager as sk
 import ch6_2.ECAI_videos_segmented_by_day as seg
-from online_activity_recognition.msg import recogniseAction, recogniseActionResult, skeleton_message
+from online_activity_recognition.msg import recogniseAction, recogniseActionResult #, skeleton_message
 
 
 class act_rec_server(object):
@@ -48,15 +48,16 @@ class act_rec_server(object):
         Currently uses segmented data - change this when produced QSRs for non segmented vidoes
         """
         dataset_path = "/home/" + getpass.getuser() + "/Datasets/ECAI_Data"
-
-        video_filepath = os.path.join(dataset_path, "dataset_segmented_15_12_16")
-        self.sk_publisher = sk.SkeletonManager(video_filepath)
+        self.video_filepath = os.path.join(dataset_path, "dataset_segmented_15_12_16")
 
         self.run = "run_%s" % run
-        topicfilepath = os.path.join(video_filepath, 'QSR_path', self.run)
+        topicfilepath = os.path.join(self.video_filepath, 'QSR_path', self.run)
         print topicfilepath
-
         self.load_all_topic_files(topicfilepath)
+
+        self.recog_path = os.path.join(topicfilepath,"online_rec")
+        if not os.path.exists(self.recog_path): os.makedirs(self.recog_path)
+
 
         self.objects = self.get_soma_objects()
         # self.objects = self.get_point_cloud_objects(path)
@@ -78,15 +79,12 @@ class act_rec_server(object):
         [255, 170, 0], [0, 170, 255], [255, 0, 170], [170, 0, 255]] # note BGR ...
         self._create_image()
 
-        self.online_window = {}
-        self.online_window_img = {}
-        self.act_results = {}
-
         self.image_pub = rospy.Publisher("/activity_recognition_results", Image, queue_size=10)
         self.image_label = cv2.imread(dataset_path+'/image_label.png')
 
         self.bridge = CvBridge()
         self.qsr_median_window = 3
+        self.ordered_labels = []
 
     def _create_image(self):
         #creating the image
@@ -99,12 +97,11 @@ class act_rec_server(object):
                 self.img[(self.space_th+self.axes_th)*i+j:(self.space_th+self.axes_th)*i+j+1, :3, :] = 255
                 self.img[(self.space_th+self.axes_th)*i+j:(self.space_th+self.axes_th)*i+j+1, self.time-3:, :] = 255
 
-    def main(self):
-        self.online_window = {}
-        self.online_window_img = {}
+    def main_loop(self):
+
         self.act_results = {}
 
-        self.pred_topic = []
+        self.pred_labels = []
         self.true_labels = []
 
         print "running offline..."
@@ -113,131 +110,183 @@ class act_rec_server(object):
         counter = 1
         # for counter, task in enumerate(sorted(os.listdir(directory))):
         for date in sorted(videos_by_day.keys()):
-            print date
+            print "\nDate: ", date
+
+            self.window_size = 20
 
             for video in videos_by_day[date]:
-                print "video:", video
-
                 if '196' in video or '211' in video: continue
+                print "video:", video
+                self.skeleton_map = {}
 
-                # d_video = os.path.join(directory, task)
-                self.sk_publisher.run_offline_instead_of_callback(video)
+                self.run_offline_instead_of_callback(video)
 
-                self.all_labels.append(self.sk_publisher.label)
+                for it, window in self.skeleton_map.items():
+                    try:
+                        next_window = self.skeleton_map[it+1]
+                    except KeyError:
+                        next_window = {}
 
-                self.convert_to_map()
-                self.get_world_frame_trace()
-                self.update_online_window()
+                    self.get_world_frame_trace(window, next_window)
+                    self.update_online_window()
+
                 self.recognise_activities()
                 self.plot_online_window()
 
-
             true_labels  = self.true_labels
             pred_labels  = self.pred_labels
-            import pdb; pdb.set_trace()
 
-            print "k: %s. v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. "  \
-              %(self.num_topics, metrics.v_measure_score(true_labels, pred_labels), metrics.homogeneity_score(true_labels, pred_labels),
-                metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
-                metrics.normalized_mutual_info_score(true_labels, pred_labels))
-            print ">> ended\n"
+        print "k: %s. v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. "  \
+          %(self.num_topics, metrics.v_measure_score(true_labels, pred_labels), metrics.homogeneity_score(true_labels, pred_labels),
+            metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
+            metrics.normalized_mutual_info_score(true_labels, pred_labels))
+
+        print ">> ended\n"
+
+        name = '/online_predictions.p'
+        f1 = open(self.recog_path+name, 'w')
+        pickle.dump(pred_labels, f1, 2)
+        f1.close()
+
+        name = '/online_gt.p'
+        f1 = open(self.recog_path+name, 'w')
+        pickle.dump(true_labels, f1, 2)
+        f1.close()
+
+        import pdb; pdb.set_trace()
+
+
+    def run_offline_instead_of_callback(self, vid):
+
+        d_video = os.path.join(self.video_filepath, vid)
+        d_sk = os.path.join(d_video, 'skeleton')
+        d_robot = os.path.join(d_video, 'robot')
+
+        with open(os.path.join(d_video, 'label.txt')) as f:
+            for i, row in enumerate(f):
+                if i == 1:
+                    self.label = row
+        sk_files = [f for f in sorted(os.listdir(d_sk)) if os.path.isfile(os.path.join(d_sk, f))]
+        r_files = [f for f in sorted(os.listdir(d_robot)) if os.path.isfile(os.path.join(d_robot,f))]
+
+        self.len_of_video = len(sk_files)
+        self.ordered_labels.append(self.label)
+
+        # self.half_windows = math.ceil(self.len_of_video / self.window_size)*2
+        self.half_windows = int(math.ceil(self.len_of_video / float(self.window_size)*2))
+        for w in xrange(self.half_windows+1):
+            self.skeleton_map[w] = {}
+
+        # import pdb; pdb.set_trace()
+
+        for _file in sorted(sk_files):
+
+            frame = int(_file.replace(".txt", ""))
+            which_window = (frame-1) / (self.window_size/2)
+
+            sk = get_sk_info(open(os.path.join(d_sk, _file),'r'))   # old ECAI data format.
+            r =  get_rob_info(open(os.path.join(d_robot,_file),'r'))
+
+            robot_pose = Pose(Point(r[0][0],r[0][1],r[0][2]), Quaternion(r[1][0], r[1][1], r[1][2], r[1][3]))
+            for name, j in sk.items():
+                if "hand" not in name: continue
+
+                # pose = Pose(Point(j[0],j[1],j[2]), Quaternion(0,0,0,1))
+                map_point = self.convert_to_world_frame(Point(j[0],j[1],j[2]), robot_pose)
+
+                try:
+                    self.skeleton_map[which_window][name].append([map_point.x, map_point.y, map_point.z])
+                except KeyError:
+                    self.skeleton_map[which_window][name] = [[map_point.x, map_point.y, map_point.z]]
 
 
     #########################################################################
     def update_online_window(self):
-        for subj in self.subj_world_trace:
+
+        try:
+            self.online_window[:self.time-1] = self.online_window[1:]
+        except AttributeError:
             # initiate the window of QSTAGS for this person
-            if subj not in self.online_window:
-                self.online_window[subj] = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
-                self.online_window_img[subj] = self.img #np.zeros((len(self.code_book)*self.th,self.windows_size*self.th2,3),dtype=np.uint8)+255
-            else:  #shifts by one frame
-                self.online_window[subj][:self.time-1] = self.online_window[subj][1:]
-                #self.online_window_img[subj][:,self.th2:self.windows_size*self.th2,:] = self.online_window_img[subj][:,0:self.windows_size*self.th2-self.th2,:]
-            # find which QSTAGS happened in this frame
-            ret = self.subj_world_trace[subj]
-            self.online_window[subj][-1,:] = 0
-            #self.online_window_img[subj][:, 0:self.th2, :] = 255
-            for cnt, h in zip(ret.qstag.graphlets.histogram, ret.qstag.graphlets.code_book):
-                oss, ss, ts  = nodes(ret.qstag.graphlets.graphlets[h])
-                ssl = [d.values() for d in ss]
-                # import pdb; pdb.set_trace()
+            self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
+            self.online_window_img = self.img #np.zeros((len(self.code_book)*self.th,self.windows_size*self.th2,3),dtype=np.uint8)+255
 
-                #if "Microwave" in oos:
-                #print ">>>", cnt, h, type(h) #, #oss, ssl #ret.qstag.graphlets.graphlets[h]
-                if isinstance(h, int):
-                    h = "{:20d}".format(h).lstrip()
-                #print cnt, h, type(h), len(h), len(self.code_book), len(self.code_book[0]) #, self.code_book.shape
-                #code_book = [str(i) for i in self.code_book]
+        #self.online_window_img[subj][:,self.th2:self.windows_size*self.th2,:] = self.online_window_img[subj][:,0:self.windows_size*self.th2-self.th2,:]
+        # find which QSTAGS happened in this frame
+        ret = self.subj_world_trace
 
-                if h in self.code_book:  # Futures WARNING here
-                    index = list(self.code_book).index(h)
-                    self.online_window[subj][-1, index] = 1
+        self.online_window[-1,:] = 0
+        #self.online_window_img[subj][:, 0:self.th2, :] = 255
+        for cnt, h in zip(ret.qstag.graphlets.histogram, ret.qstag.graphlets.code_book):
+            oss, ss, ts  = nodes(ret.qstag.graphlets.graphlets[h])
+            ssl = [d.values() for d in ss]
 
-                    #self.online_window_img[subj][index*self.th:index*self.th+self.th, 0:self.th2, :] = 10
+            #if "Microwave" in oos:
+            #print ">>>", cnt, h, type(h) #, #oss, ssl #ret.qstag.graphlets.graphlets[h]
+            if isinstance(h, int):
+                h = "{:20d}".format(h).lstrip()
+            #print cnt, h, type(h), len(h), len(self.code_book), len(self.code_book[0]) #, self.code_book.shape
+            #code_book = [str(i) for i in self.code_book]
+
+            if h in self.code_book:  # Futures WARNING here
+                index = list(self.code_book).index(h)
+                self.online_window[-1, index] = 1
+
+                #self.online_window_img[subj][index*self.th:index*self.th+self.th, 0:self.th2, :] = 10
 
     #########################################################################
     def recognise_activities(self):
         self.act_results = {}
-        # print "\n>>what happens here?"
 
-        for subj, window in self.online_window.items():
-            # compressing the different windows to be processed
-            for w in range(2,10,2):
-                for i in range(self.time-w):
-                    compressed_window = copy.deepcopy(window[i,:])
-                    for j in range(1,w+1):
-                        compressed_window += window[j+i,:]
+        # for window in self.online_window:
+            # if sum(window) == 0: continue
 
-                    compressed_window = [1 if o !=0 else 0 for o in compressed_window]
-                    # compressed_window /= compressed_window
+        # compressing the different windows to be processed
+        for w in range(2,10,2):
+            for i in range(self.time - w):
+                compressed_window = copy.deepcopy(self.online_window[i,:])
+                for j in range(1, w+1):
+                    compressed_window += self.online_window[j+i,:]
 
-                    # comparing the processed windows with the different actions
-                    if subj not in self.act_results:
-                        self.act_results[subj] = {}
-                    for act in self.actions_vectors:
-                        if act not in self.act_results[subj]:
-                            self.act_results[subj][act] = np.zeros((self.time), dtype=np.float32)
+                compressed_window = [1 if o !=0 else 0 for o in compressed_window]
+                # compressed_window /= compressed_window
 
-                        result = np.sum(compressed_window*self.actions_vectors[act])
-                        if result != 0:
-                            self.act_results[subj][act][i:i+w] += result
-                        # if act==2:
-                        #     self.act_results[subj][act][i:i+w] += 20
+                for act, topic in self.actions_vectors.items():
+                    if act not in self.act_results:
+                        self.act_results[act] = np.zeros((self.time), dtype=np.float32)
+
+                    result = np.sum(compressed_window*topic)
+                    if result != 0:
+                        self.act_results[act][i:i+w] += result
+                        # self.act_results[act] += result
+                    # if result != 0:
+                    #     self.act_results[act][i:i+w] += 20
+        import pdb; pdb.set_trace()
+
         # calibration
-        for subj in self.act_results:
-            for act in self.act_results[subj]:
-                self.act_results[subj][act] /= 20
+        for act in self.act_results:
+            self.act_results[act] /= 20
 
         # create a classification
-        for subj in self.act_results:
-            max_dist = 0
-            max_act = 100
-            for frame in xrange(self.time):
-                for act, dist in self.act_results[subj].items():
-                    if dist[frame] > max_dist:
-                        max_dist = dist[frame]
-                        max_act = act
-                if max_act !=100:
-                    self.true_labels.append(self.sk_publisher.label)
-                    self.pred_topic.append(max_act)
-
+        max_dist = 0
+        max_act = 100
+        for frame in xrange(self.time):
+            for act, dist in self.act_results.items():
+                if dist[frame] > max_dist:
+                    max_dist = dist[frame]
+                    max_act = act
+            if max_act !=100:
+                self.true_labels.append(self.label)
+                self.pred_labels.append(max_act)
 
     #########################################################################
     def plot_online_window(self):
         #if len(self.online_window_img) == 0:
         final_img = self.img #
 
-        for counter, subj in enumerate(self.online_window_img):
-            img1 = self._update_image(self.act_results[subj])
-            if counter==0:
-                final_img = img1
-            else:
-                final_img = np.concatenate((final_img, img1), axis=1)
-
+        final_img = self._update_image(self.act_results)
         #try:
         #print ""
         self.image_pub.publish(self.bridge.cv2_to_imgmsg(final_img, "bgr8"))
-
         #except CvBridgeError as e:
         #    print(e)
 
@@ -281,13 +330,38 @@ class act_rec_server(object):
             # self.actions_vectors[count][self.actions_vectors[count]<0] = 0
 
 
-    def get_object_frame_qsrs(self, world_trace):
+    def get_world_frame_trace(self, first_window, sec_window):
+        """Accepts a dictionary of world (soma) objects.
+        Adds the position of the object at each timepoint into the World Trace"""
+
+        ob_states={}
+        world = World_Trace()
+
+        for window in [first_window, sec_window]:
+
+            for name, data in window.items():
+                for t, j in enumerate(data):
+                    try:
+                        ob_states[name].append(Object_State(name=name, timestamp=t+1, x=j[0], y=j[1], z=j[2]))
+                    except KeyError:
+                        ob_states[name] = [Object_State(name=name, timestamp=t+1, x=j[0], y=j[1], z=j[2])]
+
+            for t in xrange(self.window_size/2):
+                for name, (x,y,z) in self.objects.items():
+                    try:
+                        ob_states[name].append(Object_State(name=str(name), timestamp=t+1, x=x, y=y, z=z))
+                    except KeyError:
+                        ob_states[name] = [Object_State(name=str(name), timestamp=t+1, x=x, y=y, z=z)]
+
+        for obj, object_state in ob_states.items():
+            world.add_object_state_series(object_state)
+
         joint_types = {'left_hand': 'hand', 'right_hand': 'hand',  'head-torso': 'tpcc-plane'}
 
         joint_types_plus_objects = joint_types.copy()
-        for object in self.objects:
-            generic_object = "_".join(object.split("_")[:-1])
-            joint_types_plus_objects[object] = generic_object
+        for name in self.objects:
+            generic_object = "_".join(name.split("_")[:-1])
+            joint_types_plus_objects[name] = generic_object
         #print joint_types_plus_objects
 
         """create QSRs between the person's joints and the soma objects in map frame"""
@@ -309,91 +383,87 @@ class act_rec_server(object):
         dynamic_args["filters"] = {"median_filter": {"window": self.qsr_median_window}}
 
         qsrlib = QSRlib()
-        req = QSRlib_Request_Message(which_qsr=["argd", "qtcbs"], input_data=world_trace, dynamic_args=dynamic_args)
+        req = QSRlib_Request_Message(which_qsr=["argd", "qtcbs"], input_data=world, dynamic_args=dynamic_args)
         #req = QSRlib_Request_Message(which_qsr="argd", input_data=world_trace, dynamic_args=dynamic_args)
         ret = qsrlib.request_qsrs(req_msg=req)
 
         #print "\n"
         #for ep in ret.qstag.episodes:
         #    print ep
-        return ret
+        self.subj_world_trace = ret
 
 
-    def get_world_frame_trace(self):
-        """Accepts a dictionary of world (soma) objects.
-        Adds the position of the object at each timepoint into the World Trace"""
-        self.subj_world_trace = {}
+    # def convert_to_map(self, window_size):
+    #     self.skeleton_map = {}
+    #
+    #
+    #     for subj in self.sk_publisher.accumulate_data.keys():
+    #
+    #         all_data = len(self.sk_publisher.accumulate_data[subj])
+    #         if all_data < window_size*2:
+    #             continue
+    #         #print all_data
+    #
+    #         new_range = range(0, window_size*2, 2)
+    #         # new_range = range(np.max([0, all_data-frames*2]), all_data,2)
+    #
+    #         self.skeleton_map[subj] = {}
+    #         self.skeleton_map[subj]['right_hand'] = []
+    #         self.skeleton_map[subj]['left_hand'] = []
+    #         for f in new_range:
+    #             # print '*',f
+    #             robot_pose = self.sk_publisher.accumulate_robot[subj][f]
+    #
+    #             for j, name in zip([7, 3],["right_hand", "left_hand"]):
+    #                 hand = self.sk_publisher.accumulate_data[subj][f].joints[j].pose.position
+    #                 map_point = self.convert_to_world_frame(hand, robot_pose)
+    #                 map_joint = [map_point.x, map_point.y, map_point.z]
+    #                 self.skeleton_map[subj][name].append(map_joint)
 
-        for subj in self.skeleton_map:
-            #print ">", len(self.skeleton_map[subj]["left_hand"])
-            ob_states={}
-            world = World_Trace()
-            map_frame_data = self.skeleton_map[subj]
-            for joint_id in map_frame_data.keys():
+            # self.sk_publisher.accumulate_data[subj] = self.sk_publisher.accumulate_data[subj][2:]
 
-                #Joints:
-                for t in xrange(self.frames):
-                    x = map_frame_data[joint_id][t][0]
-                    y = map_frame_data[joint_id][t][1]
-                    z = map_frame_data[joint_id][t][2]
-                    if joint_id not in ob_states.keys():
-                        ob_states[joint_id] = [Object_State(name=joint_id, timestamp=t+1, x=x, y=y, z=z)]
-                    else:
-                        ob_states[joint_id].append(Object_State(name=joint_id, timestamp=t+1, x=x, y=y, z=z))
 
-            # SOMA objects
-            for t in xrange(self.frames):
-                for object, (x,y,z) in self.objects.items():
-                    if object not in ob_states.keys():
-                        ob_states[object] = [Object_State(name=str(object), timestamp=t+1, x=x, y=y, z=z)]
-                    else:
-                        ob_states[object].append(Object_State(name=str(object), timestamp=t+1, x=x, y=y, z=z))
+    def convert_to_world_frame(self, point, robot_pose):
+        """Convert a single camera frame coordinate into a map frame coordinate"""
+        fx = 525.0
+        fy = 525.0
+        cx = 319.5
+        cy = 239.5
 
-                # # Robot's position
-                # (x,y,z) = self.robot_data[t][0]
-                # if 'robot' not in ob_states.keys():
-                #     ob_states['robot'] = [Object_State(name='robot', timestamp=t, x=x, y=y, z=z)]
-                # else:
-                #     ob_states['robot'].append(Object_State(name='robot', timestamp=t, x=x, y=y, z=z))
+        y,z,x = point.x, point.y, point.z
 
-            for obj, object_state in ob_states.items():
-                world.add_object_state_series(object_state)
+        xr = robot_pose.position.x
+        yr = robot_pose.position.y
+        zr = robot_pose.position.z
 
-            # get world trace for each person
-            # region = self.soma_roi_config[self.waypoint]
-            self.subj_world_trace[subj] = self.get_object_frame_qsrs(world)
-            self.skeleton_map[subj]["left_hand"] = self.skeleton_map[subj]["left_hand"][2:]
-            self.skeleton_map[subj]["right_hand"] = self.skeleton_map[subj]["right_hand"][2:]
+        ax = robot_pose.orientation.x
+        ay = robot_pose.orientation.y
+        az = robot_pose.orientation.z
+        aw = robot_pose.orientation.w
 
-    def convert_to_map(self):
-        self.skeleton_map = {}
-        frames = 20      # frames to be processed
-        self.frames = frames
+        roll, pr, yawr = euler_from_quaternion([ax, ay, az, aw])
 
-        for subj in self.sk_publisher.accumulate_data.keys():
+        # Fixed for this dataset
+        PTU_pan = 0
+        PTU_tilt = 10*math.pi / 180.
 
-            all_data = len(self.sk_publisher.accumulate_data[subj])
-            if all_data<frames*2:
-                continue
-            #print all_data
+        yawr += PTU_pan
+        pr += PTU_tilt
 
-            new_range = range(0,frames*2, 2)
-            # new_range = range(np.max([0, all_data-frames*2]), all_data,2)
+        # transformation from camera to map
+        rot_y = np.matrix([[np.cos(pr), 0, np.sin(pr)], [0, 1, 0], [-np.sin(pr), 0, np.cos(pr)]])
+        rot_z = np.matrix([[np.cos(yawr), -np.sin(yawr), 0], [np.sin(yawr), np.cos(yawr), 0], [0, 0, 1]])
+        rot = rot_z*rot_y
 
-            self.skeleton_map[subj] = {}
-            self.skeleton_map[subj]['right_hand'] = []
-            self.skeleton_map[subj]['left_hand'] = []
-            for f in new_range:
-                # print '*',f
-                robot_pose = self.sk_publisher.accumulate_robot[subj][f]
+        pos_r = np.matrix([[xr], [yr], [zr+1.66]]) # robot's position in map frame
+        pos_p = np.matrix([[x], [-y], [-z]]) # person's position in camera frame
+        map_pos = rot*pos_p+pos_r # person's position in map frame
 
-                for j, name in zip([7, 3],["right_hand", "left_hand"]):
-                    hand = self.sk_publisher.accumulate_data[subj][f].joints[j].pose.position
-                    map_point = self.sk_publisher.convert_to_world_frame(hand, robot_pose)
-                    map_joint = [map_point.x, map_point.y, map_point.z]
-                    self.skeleton_map[subj][name].append(map_joint)
-                    # import pdb; pdb.set_trace()
-            self.sk_publisher.accumulate_data[subj] = self.sk_publisher.accumulate_data[subj][2:]
+        x_mf = map_pos[0,0]
+        y_mf = map_pos[1,0]
+        z_mf = map_pos[2,0]
+        # print ">>" , x_mf, y_mf, z_mf
+        return Point(x_mf, y_mf, z_mf)
 
 
     def get_soma_objects(self):
@@ -451,6 +521,61 @@ def nodes(graph):
             temp.append(node['name'])
     return objects, spa, temp
 
+def get_sk_info(f1):
+    joints = {}
+    for count, line in enumerate(f1):
+        if count == 0:
+            t = np.float64(line.split(':')[1].split('\n')[0])
+        # read the joint name
+        elif (count-1)%10 == 0:
+            j = line.split('\n')[0]
+            joints[j] = []
+        # read the x value
+        elif (count-1)%10 == 2:
+            a = float(line.split('\n')[0].split(':')[1])
+            joints[j].append(a)
+        # read the y value
+        elif (count-1)%10 == 3:
+            a = float(line.split('\n')[0].split(':')[1])
+            joints[j].append(a)
+        # read the z value
+        elif (count-1)%10 == 4:
+            a = float(line.split('\n')[0].split(':')[1])
+            joints[j].append(a)
+    return joints
+
+
+def get_rob_info(f1):
+    rob_data = [[], []] # format: [(xyz),(r,p,y)]
+    for count, line in enumerate(f1):
+        # read the x value
+        if count == 1:
+            a = float(line.split('\n')[0].split(':')[1])
+            rob_data[0].append(a)
+        # read the y value
+        elif count == 2:
+            a = float(line.split('\n')[0].split(':')[1])
+            rob_data[0].append(a)
+        # read the z value
+        elif count == 3:
+            a = float(line.split('\n')[0].split(':')[1])
+            rob_data[0].append(a)
+        # read roll pitch yaw
+        elif count == 5:
+            ax = float(line.split('\n')[0].split(':')[1])
+        elif count == 6:
+            ay = float(line.split('\n')[0].split(':')[1])
+        elif count == 7:
+            az = float(line.split('\n')[0].split(':')[1])
+        elif count == 8:
+            aw = float(line.split('\n')[0].split(':')[1])
+
+            roll, pitch, yaw = euler_from_quaternion([ax, ay, az, aw])    #odom
+            #pitch = 10*math.pi / 180.   #we pointed the pan tilt 10 degrees
+            #rob_data[1] = [roll, pitch, yaw]
+            rob_data[1] = [ax,ay,az,aw]
+    return rob_data
+
 if __name__ == "__main__":
     rospy.init_node('activity_recognition')
 
@@ -461,4 +586,4 @@ if __name__ == "__main__":
         run = sys.argv[1]
 
     act = act_rec_server(run)
-    act.main()
+    act.main_loop()
