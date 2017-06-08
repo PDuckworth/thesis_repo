@@ -247,16 +247,6 @@ def get_sentance_annotation(vid):
 
 if __name__ == "__main__":
 
-    # ****************************************************************************************************
-    # parameters
-    # ****************************************************************************************************
-    data_subset = False
-    frame_rate_reduce = 1     # drop every other frame - before median filter applies
-    mean_window = 1 # use scipy medfilt with the window_size - after down sampling frame rate
-    qsr_median_window = 10
-    tpcc = True
-    objects_inc_type = True
-
     # create a QSRlib object if there isn't one already
     qsrlib = QSRlib()
     uuids, labels, wordids, wordcts = [], [], [], []
@@ -292,8 +282,16 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # Dynamic Args list
     # ****************************************************************************************************
+
+    data_subset = False
+    frame_rate_reduce = 1     # drop every other frame - before median filter applies
+    mean_window = 11 # use scipy medfilt with the window_size - after down sampling frame rate
+    qsr_median_window = 5
+    tpcc = True
+    objects_inc_type = True
+
     which_qsr=["argd", "qtcbs"]
-    objects_used = ['left_hand', 'right_hand', 'torso']
+    objects_used = ['left_hand', 'right_hand'] #, 'torso']
 
     qsrs_for = []
     for selected_joint in objects_used:
@@ -313,8 +311,8 @@ if __name__ == "__main__":
 
     dynamic_args = { "qtcbs": {"qsrs_for" : qsrs_for, "no_collapse": True, "quantisation_factor":0.1, "validate":False },
                      "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},
-                    #"qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4}, "object_types": object_types},
-                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
+                    #  "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.3, 'Ignore': 10}},
+                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 3, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
                      "filters" : {"median_filter": {"window": qsr_median_window}}}
 
     # ****************************************************************************************************

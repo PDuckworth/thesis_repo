@@ -49,6 +49,7 @@ class act_rec_server(object):
         """
         dataset_path = "/home/" + getpass.getuser() + "/Datasets/ECAI_Data"
         self.video_filepath = os.path.join(dataset_path, "dataset_segmented_15_12_16")
+        self.non_segmented_filepath = os.path.join(dataset_path, "dataset_not_segmented")
 
         self.run = "run_%s" % run
         topicfilepath = os.path.join(self.video_filepath, 'QSR_path', self.run)
@@ -75,7 +76,8 @@ class act_rec_server(object):
         self.num_topics = len(self.actions_vectors) #stupid name!
         self.time = 500
         self.data = {}
-        self.colors = [[0, 0, 255], [0, 255, 0], [255, 0, 0], [170, 255, 0], [0, 255, 170], [255, 170, 0], [0, 170, 255], [255, 0, 170], [170, 0, 255]]
+        self.colors = [[0, 0, 255], [0, 255, 0], [255, 0, 0], [170, 255, 0], [0, 255, 170], [255, 170, 0],
+            [0, 170, 255], [255, 0, 170], [170, 0, 255]]
         self._create_image()
 
         self.image_pub = rospy.Publisher("/activity_recognition_results", Image, queue_size=10)
@@ -99,44 +101,52 @@ class act_rec_server(object):
     def main_loop(self):
 
         self.act_results = {}
-
         self.pred_labels = []
         self.true_labels = []
 
         print "running offline..."
-        videos_by_day = seg.segmented_videos()
-        self.all_labels = []
+
         counter = 1
-        # for counter, task in enumerate(sorted(os.listdir(directory))):
-        for date in sorted(videos_by_day.keys()):
-            print "\nDate: ", date
+
+        for video in os.listdir(self.non_segmented_filepath):
 
             self.window_size = 20
+            # if '196' in video or '211' in video: continue
+            self.online_window = []
+            self.run_offline_instead_of_callback(video)
 
-            for video in videos_by_day[date]:
-                if '196' in video or '211' in video: continue
+            for it in self.skeleton_map.keys():
+                map_window = self.skeleton_map[it]
+                cam_window = self.skeleton_cam[it]
+                try:
+                    map_next = self.skeleton_map[it+1]
+                    cam_next = self.skeleton_cam[it+1]
+                except KeyError:
+                    map_next = {}
+                    cam_next = {}
 
-                # self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
-                self.run_offline_instead_of_callback(video)
+                self.get_world_frame_trace(map_window, map_next, cam_window, cam_next)
+                self.inc_online_window()  # self.update_online_window()
 
-                for it in self.skeleton_map.keys():
-                    map_window = self.skeleton_map[it]
-                    cam_window = self.skeleton_cam[it]
-                    try:
-                        map_next = self.skeleton_map[it+1]
-                        cam_next = self.skeleton_cam[it+1]
-                    except KeyError:
-                        map_next = {}
-                        cam_next = {}
+            print "video: %s: %s" %(video, self.label)
+            self.recognise_activities()
+            # self.plot_online_window()
+            counter+=1
 
-                    self.get_world_frame_trace(map_window, map_next, cam_window, cam_next)
-                    self.update_online_window()
-                print "video: %s: %s" %(video, self.label)
-                self.recognise_activities()
-                self.plot_online_window()
+            if counter % 100 == 0:
+                true_labels  = self.true_labels
+                pred_labels = self.pred_labels
 
-            true_labels  = self.true_labels
-            pred_labels  = self.pred_labels
+                print "\nk: %s. v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. "  \
+                  %(self.num_topics, metrics.v_measure_score(true_labels, pred_labels), metrics.homogeneity_score(true_labels, pred_labels),
+                    metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
+                    metrics.normalized_mutual_info_score(true_labels, pred_labels))
+
+
+        # true_labels  = [item for sublist in self.true_labels for item in sublist]
+        # pred_labels = [item for sublist in self.pred_labels for item in sublist]
+        true_labels  = self.true_labels
+        pred_labels = self.pred_labels
 
         print "k: %s. v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. "  \
           %(self.num_topics, metrics.v_measure_score(true_labels, pred_labels), metrics.homogeneity_score(true_labels, pred_labels),
@@ -160,19 +170,30 @@ class act_rec_server(object):
 
     def run_offline_instead_of_callback(self, vid):
 
-        d_video = os.path.join(self.video_filepath, vid)
+        # d_video = os.path.join(self.video_filepath, vid)
+        d_video = os.path.join(self.non_segmented_filepath, vid)
         d_sk = os.path.join(d_video, 'skeleton')
         d_robot = os.path.join(d_video, 'robot')
 
-        with open(os.path.join(d_video, 'label.txt')) as f:
+        self.label = ""
+        self.labels = {}
+        with open(os.path.join(d_video, 'labels.txt')) as f:
             for i, row in enumerate(f):
-                if i == 1:
-                    self.label = row
+                self.labels[i] = (row.split(":")[1], int(row.split(":")[2].split(",")[0])-1, int(row.split(":")[2].split(",")[1].replace("\n",""))-1)
+                self.label += row.split(":")[1] + "  "
+
         sk_files = [f for f in sorted(os.listdir(d_sk)) if os.path.isfile(os.path.join(d_sk, f))]
         r_files = [f for f in sorted(os.listdir(d_robot)) if os.path.isfile(os.path.join(d_robot,f))]
 
         self.len_of_video = len(sk_files)
         self.ordered_labels.append(self.label)
+
+        self.ground_truth = ["na"]*self.len_of_video
+        for cnt, act in self.labels.items():
+            name, st, en = act  # st and end have -1 above, to move to iterate from 0.
+            if name != 'making_tea':
+                gt_name = [name]*(en-st)
+                self.ground_truth[st:en] = gt_name
 
         self.skeleton_map = {}
         self.skeleton_cam = {}
@@ -186,11 +207,12 @@ class act_rec_server(object):
 
         for _file in sorted(sk_files):
 
-            frame = int(_file.replace(".txt", ""))
+            frame = int(_file.replace("skl_","").replace(".txt", ""))
             which_window = (frame-1) / (self.window_size/2)
+            robot_file = _file.replace("skl_","robot_")
 
             sk = get_sk_info(open(os.path.join(d_sk, _file),'r'))   # old ECAI data format.
-            r =  get_rob_info(open(os.path.join(d_robot,_file),'r'))
+            r =  get_rob_info(open(os.path.join(d_robot, robot_file),'r'))
 
             robot_pose = Pose(Point(r[0][0],r[0][1],r[0][2]), Quaternion(r[1][0], r[1][1], r[1][2], r[1][3]))
             for name, j in sk.items():
@@ -208,63 +230,82 @@ class act_rec_server(object):
                     self.skeleton_cam[which_window][name] = [[j[0], j[1], j[2]]]
 
     #########################################################################
-    def update_online_window(self):
+    def inc_online_window(self):
 
-        try:
-            self.online_window[:self.time-1] = self.online_window[1:]
-        except AttributeError:
-            # initiate the window of QSTAGS for this person
-            self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
-            self.online_window_img = self.img #np.zeros((len(self.code_book)*self.th,self.windows_size*self.th2,3),dtype=np.uint8)+255
+        online_window = np.zeros(len(self.code_book), dtype=np.uint8)
+        self.online_window_img = self.img #np.zeros((len(self.code_book)*self.th,self.windows_size*self.th2,3),dtype=np.uint8)+255
 
-        #self.online_window_img[subj][:,self.th2:self.windows_size*self.th2,:] = self.online_window_img[subj][:,0:self.windows_size*self.th2-self.th2,:]
-        # find which QSTAGS happened in this frame
-        self.online_window[-1,:] = 0
-        #self.online_window_img[subj][:, 0:self.th2, :] = 255
         for ret in self.subj_world_trace:
-
             for cnt, h in zip(ret.histogram, ret.code_book):
-                oss, ss, ts  = nodes(ret.graphlets[h])
-                ssl = [d.values() for d in ss]
-
-                #if "Microwave" in oos:
-                #print ">>>", cnt, h, type(h) #, #oss, ssl #ret.qstag.graphlets.graphlets[h]
                 if isinstance(h, int):
                     h = "{:20d}".format(h).lstrip()
-                #print cnt, h, type(h), len(h), len(self.code_book), len(self.code_book[0]) #, self.code_book.shape
-                #code_book = [str(i) for i in self.code_book]
 
                 if h in self.code_book:  # Futures WARNING here
                     index = list(self.code_book).index(h)
-                    self.online_window[-1, index] = 1
+                    online_window[index] = 1
 
-                #self.online_window_img[subj][index*self.th:index*self.th+self.th, 0:self.th2, :] = 10
+        self.online_window.append(online_window)
+
+    # #########################################################################
+    # def update_online_window(self):
+    #
+    #     try:
+    #         self.online_window[:self.time-1] = self.online_window[1:]
+    #     except AttributeError:
+    #         # initiate the window of QSTAGS for this person
+    #         self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
+    #         self.online_window_img = self.img #np.zeros((len(self.code_book)*self.th,self.windows_size*self.th2,3),dtype=np.uint8)+255
+    #
+    #     #self.online_window_img[subj][:,self.th2:self.windows_size*self.th2,:] = self.online_window_img[subj][:,0:self.windows_size*self.th2-self.th2,:]
+    #     # find which QSTAGS happened in this frame
+    #     self.online_window[-1,:] = 0
+    #     #self.online_window_img[subj][:, 0:self.th2, :] = 255
+    #     for ret in self.subj_world_trace:
+    #
+    #         for cnt, h in zip(ret.histogram, ret.code_book):
+    #             oss, ss, ts  = nodes(ret.graphlets[h])
+    #             ssl = [d.values() for d in ss]
+    #
+    #             #if "Microwave" in oos:
+    #             #print ">>>", cnt, h, type(h) #, #oss, ssl #ret.qstag.graphlets.graphlets[h]
+    #             if isinstance(h, int):
+    #                 h = "{:20d}".format(h).lstrip()
+    #             #print cnt, h, type(h), len(h), len(self.code_book), len(self.code_book[0]) #, self.code_book.shape
+    #             #code_book = [str(i) for i in self.code_book]
+    #
+    #             if h in self.code_book:  # Futures WARNING here
+    #                 index = list(self.code_book).index(h)
+    #                 self.online_window[-1, index] = 1
+    #
+    #             #self.online_window_img[subj][index*self.th:index*self.th+self.th, 0:self.th2, :] = 10
 
     #########################################################################
     def recognise_activities(self):
-        self.act_results = {}
 
-        # for window in self.online_window:
-            # if sum(window) == 0: continue
+        # self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
+        self.online_window = np.vstack(self.online_window)
+        time = self.online_window.shape[0]
+
+        self.act_results = {}
+        for act in self.actions_vectors.keys():
+            self.act_results[act] = np.zeros((time), dtype=np.float32)
 
         # compressing the different windows to be processed
         for w in range(2,20,2):
-            for i in range(self.time - w):
+            # print "\nW = ", w
+            if w >= time: continue
+            for i in range(time - w):
                 compressed_window = copy.deepcopy(self.online_window[i,:])
                 for j in range(1, w+1):
                     compressed_window += self.online_window[j+i,:]
-
                 compressed_window = [1 if o !=0 else 0 for o in compressed_window]
-                # compressed_window /= compressed_window
 
                 for act, topic in self.actions_vectors.items():
-                    if act not in self.act_results:
-                        self.act_results[act] = np.zeros((self.time), dtype=np.float32)
-
                     result = np.sum(compressed_window*topic)
-                    if result > 0.3:
-                    # if result != 0:
+                    if result > 0.15:
                         self.act_results[act][i:i+w] += result
+                        # if result > 0.1: self.act_results[act][i:i+w] += result
+
                         # self.act_results[act] += result
                     # if result != 0:
                     #     self.act_results[act][i:i+w] += 20
@@ -272,20 +313,103 @@ class act_rec_server(object):
         # calibration
         for act in self.act_results:
             self.act_results[act] /= 0.4
+
+        # self.online_window = np.zeros((self.time, len(self.code_book)), dtype=np.uint8)
             # self.act_results[act] = [o if o >30 else 0 for o in self.act_results[act]]
 
-        import pdb; pdb.set_trace()
-        # create a classification
-        max_dist = 0
-        max_act = 100
-        for frame in xrange(self.time):
-            for act, dist in self.act_results.items():
-                if dist[frame] > max_dist:
-                    max_dist = dist[frame]
-                    max_act = act
-            if max_act !=100:
-                self.true_labels.append(self.label)
-                self.pred_labels.append(max_act)
+        mat = np.vstack([self.act_results[act] for act in self.act_results])
+        # mat.max(axis=0)
+        # predictions = [100]*self.len_of_video
+
+        predictions = []
+        for cnt, i in enumerate(np.argmax(mat, axis=0)):
+            if max(mat[:,cnt]) == 0:
+                predictions.extend([[100]*10 ])
+            else:
+                predictions.extend([[i]*10 ])
+
+        predictions = [item for sublist in predictions for item in sublist]
+        self.predictions = predictions[:self.len_of_video]
+
+        self.true_labels.extend(self.ground_truth)
+        self.pred_labels.extend(self.predictions)
+
+        # print len(self.true_labels), len(self.pred_labels)
+        self.plot_image()
+
+    def plot_image(self):
+
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+        import matplotlib.colors as colors
+        import math
+
+        act_colours = {"na" :  'gray', 100  : 'gray',
+                    "microwaving_food": 'purple',        4 :'purple',
+                    "use_kettle": 'orange',              3 :'orange',
+                    "take_paper_towel" :'gold',
+                    "openning_double_doors" :'wheat',    7 :'wheat',
+                    "take_tea_bag" :'darkgreen',         6 :'darkgreen',
+                    "take_from_fridge":'pink',           5: 'pink',
+                    "printing_interface":'teal',         2 :'teal',
+                    "use_water_cooler":'palegreen',
+                    "printing_take_printout":'cyan',
+                    "throw_trash":'brown',               8 :'brown',
+                    "washing_up":'dodgerblue',           10 :'dodgerblue', 1 : 'dodgerblue', 9 :'dodgerblue', 0 :'dodgerblue'
+            }
+
+        # pred_labels = self.predictions
+        # true_labels = self.ground_truth
+        pred_labels = self.pred_labels
+        true_labels = self.true_labels
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+
+        start_break = 0
+        end_break = len(pred_labels)
+        ax.set_ylim(7,9)
+        ax.set_xlim(start_break, end_break)
+        range_ = range(start_break, end_break)
+
+        x1, x2 = 0, 0
+        y1, y2 = 7.5, 7.5
+        prev_lab = pred_labels[0]
+
+        add = False
+        for frame in range_:
+            lab = pred_labels[frame]
+            x2 = frame-1
+            if lab != prev_lab:
+                add = True
+                x2 = frame-1
+                # print (x1, x2), act_colours[lab]
+                plt.plot([x1, x2], [y1,y2], color=act_colours[prev_lab], linestyle='-', linewidth=150)
+                x1 = frame
+            prev_lab=lab
+        if add == False:
+            plt.plot([x1, x2], [y1,y2], color=act_colours[prev_lab], linestyle='-', linewidth=150)
+
+
+        x1, x2 = 0, 0
+        y1, y2 = 8.5, 8.5
+        prev_lab = true_labels[0]
+        add = False
+        for frame in range_:
+            lab = true_labels[frame]
+            x2 = frame-1
+            if lab != prev_lab:
+                x2 = frame-1
+                # print (x1, x2), act_colours[lab]
+                plt.plot([x1, x2], [y1,y2], color=act_colours[prev_lab], linestyle='-', linewidth=150)
+                x1 = frame
+            prev_lab=lab
+        if add == False:
+            plt.plot([x1, x2], [y1,y2], color=act_colours[prev_lab], linestyle='-', linewidth=150)
+
+        plt.show()
+
+
 
     #########################################################################
     def plot_online_window(self):
@@ -382,11 +506,11 @@ class act_rec_server(object):
         # dynamic_args['qtcbs'] = {"qsrs_for": qsrs_for, "quantisation_factor": 0.05, "validate": False, "no_collapse": True} # Quant factor is effected by filters to frame rate
         # dynamic_args["qstag"] = {"object_types": joint_types_plus_objects, "params": {"min_rows": 1, "max_rows": 1, "max_eps": 2}}
 
-        # dynamic_args['argd'] = {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}}
-        dynamic_args['argd'] = {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.3, 'Away': 0.6, 'Ignore': 10}}
+        dynamic_args['argd'] = {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}}
+        # dynamic_args['argd'] = {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.3, 'Away': 0.6, 'Ignore': 10}}
         #dynamic_args['argd'] = {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 1.5, 'Ignore': 10}}
         dynamic_args['qtcbs'] = {"qsrs_for": qsrs_for, "quantisation_factor": 0.01, "validate": False, "no_collapse": True} # Quant factor is effected by filters to frame rate
-        dynamic_args["qstag"] = {"object_types": object_types, "params": {"min_rows": 1, "max_rows": 1, "max_eps": 4}}
+        dynamic_args["qstag"] = {"object_types": object_types, "params": {"min_rows": 1, "max_rows": 1, "max_eps": 3}}
         dynamic_args["filters"] = {"median_filter": {"window": self.qsr_median_window}}
 
         qsrlib = QSRlib()
@@ -609,6 +733,7 @@ def get_rob_info(f1):
             #rob_data[1] = [roll, pitch, yaw]
             rob_data[1] = [ax,ay,az,aw]
     return rob_data
+
 
 if __name__ == "__main__":
     rospy.init_node('activity_recognition')

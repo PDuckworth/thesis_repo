@@ -85,7 +85,7 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     f1 = open(directory+name, 'w')
     pickle.dump(model.topic_word_, f1, 2)
     f1.close()
-    
+
     name = '/TopicData/code_book.p'
     f1 = open(directory+name, 'w')
     pickle.dump(code_book, f1, 2)
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     # Term Frequency
     # ****************************************************************************************************
     term_freq, online_data, code_book, graphlets = fr.load_term_frequency(directory, run)
-    low_pass_instance = 15
+    low_pass_instance = 5
 
     term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
 
@@ -414,9 +414,9 @@ if __name__ == "__main__":
     # Supervised SVM
     # ****************************************************************************************************
     labels = online_data[2]
-    supervised.run_svm(term_freq_red, labels)
+    # supervised.run_svm(term_freq_red, labels)
 
-    supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
 
     # ****************************************************************************************************
     # call batch LSA
@@ -432,12 +432,12 @@ if __name__ == "__main__":
     n_iters = 1000
     n_topics = 11
     alpha, eta = 0.5, 0.03
-    class_thresh = 0.5
+    class_thresh = 0.3
     _lambda = 0.5 # relevance scale
 
     directory = os.path.join(directory, "QSR_path/run_%s" % run)
 
-    raw_input("run LDA:")
+    # raw_input("run LDA:")
     run_topic_model(term_freq_red, code_book_red, graphlets_red, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
     print "LDA done"
 

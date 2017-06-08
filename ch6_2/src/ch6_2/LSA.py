@@ -21,6 +21,7 @@ from sklearn.preprocessing import Normalizer
 from sklearn import metrics
 from sklearn.cluster import KMeans
 from scipy.spatial.distance import pdist, cdist, euclidean
+import ch6_2.visualisations as vis
 
 def get_tf_idf_scores(data, tfidf=True, vis=False):
 
@@ -72,8 +73,10 @@ def svd_clusters(term_freq, all_labels, threshold=0.01, random=False):
     # genome(VT[2], VT[5])
 
     # X_transformed = np.dot(U, np.diag(Sigma))
-    # #Investigate data
-    # screeplot(Sigma)
+    #Investigate data
+    import pdb; pdb.set_trace()
+    
+    vis.screeplot(Sigma, vis=True)
 
 
     #print "all labels:", len(set(all_labels)), set(all_labels)
