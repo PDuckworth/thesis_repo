@@ -22,6 +22,7 @@ from sklearn import metrics
 from sklearn.cluster import KMeans
 from scipy.spatial.distance import pdist, cdist, euclidean
 import ch6_2.visualisations as vis
+import scipy
 
 def get_tf_idf_scores(data, tfidf=True, vis=False):
 
@@ -61,37 +62,30 @@ def get_tf_idf_scores(data, tfidf=True, vis=False):
     return np.array(tf_idf_scores)
 
 
-def svd_clusters(term_freq, all_labels, threshold=0.01, random=False):
+def svd_clusters(term_freq, all_labels, n_comps=11, threshold=0.01, random=False):
 
     data = get_tf_idf_scores(term_freq)
 
     U, Sigma, VT = randomized_svd(data, n_components=1000, n_iter=5, random_state=None)
 
     # for i, j in itertools.combinations(VT[2:7], 2):
-    # genome(VT[2], VT[3])
-    # genome(VT[2], VT[4])
-    # genome(VT[2], VT[5])
+    # vis.comare_genomes(VT[2], VT[3])
+    # vis.comare_genomes(VT[2], VT[4])
+    # vis.comare_genomes(VT[2], VT[5])
 
     # X_transformed = np.dot(U, np.diag(Sigma))
     #Investigate data
-    import pdb; pdb.set_trace()
-    
-    vis.screeplot(Sigma, vis=True)
 
+    # vis.screeplot(Sigma, vis=False)
 
     #print "all labels:", len(set(all_labels)), set(all_labels)
     #print "\nLSA Results"
     max_v = 0
-    pies = {}
 
-    #for n_comps in range(6, 15):
-    # for n_comps in range(11, 12):
     if random: print "compare to RANDOM CHANCE"
 
+    repeat = {"v": [], "ho": [], "co": [], "mi": [], "nmi": [], "a":[] }
     for i in xrange(10):   #repeat 10 times
-        n_comps = 11
-        pies[n_comps] = {}
-
         U, Sigma, VT = randomized_svd(data, n_components=n_comps, n_iter=5, random_state=None)
 
         random_labels = []
@@ -102,57 +96,12 @@ def svd_clusters(term_freq, all_labels, threshold=0.01, random=False):
                 pred_labels.append(np.argmax(doc))
                 true_labels.append(label)
                 random_labels.append(label)
-                temp = [0]*11
+                temp = [0]*n_comps
                 temp[np.argmax(doc)] = 1
                 U_assignments.append(temp)
 
         # new_labels = [np.argmax(doc) > 0.1 for doc in U]
         num_clusters = (Sigma > 1.0).sum(axis=0)
-
-        # print new_labels
-        # print all_labels
-
-        #Find number of events in the concept
-        total_number = {}
-        for i in set(true_labels):
-            for j in true_labels:
-                if i == j:
-                    try:
-                        total_number[i] +=1
-                    except:
-                        total_number[i] = 1
-
-        conf = {}
-        for i in xrange(num_clusters):
-            conf[i] = {}
-
-        for i, j in zip(pred_labels, true_labels):
-            try:
-                conf[i][j] +=1
-            except:
-                conf[i][j] = 1
-
-        assign={}
-        for i, cluster in conf.items():
-            #print "\n concept:", i
-            pies[n_comps]["conept_"+str(i)] = {}
-
-            max_ = 0
-            for lab, cnt in cluster.items():
-                # perc = cnt/float(total_number[lab])
-                perc = (cnt, total_number[lab])
-                #print "  ", lab, perc
-
-                pies[n_comps]["conept_" + str(i)][lab] = perc
-
-                if cnt/float(total_number[lab]) > max_:
-                    max_ = cnt
-                    b = lab
-            assign[i] = b
-
-        # new_labels = [assign[i] for i in new_labels]
-        # for i, j in assign.items():
-        #     print i,j
 
         if random == True:
             #calculate the random chance scores:
@@ -160,18 +109,31 @@ def svd_clusters(term_freq, all_labels, threshold=0.01, random=False):
             shuffle(random_labels)
             pred_labels = random_labels
 
-        print "k=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. Acc: %0.3f. LL: %0.3f." \
-          % (num_clusters, len(pred_labels), metrics.v_measure_score(true_labels, pred_labels),
-             metrics.homogeneity_score(true_labels, pred_labels),
-             metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
-             metrics.normalized_mutual_info_score(true_labels, pred_labels),
-             metrics.accuracy_score(true_labels, pred_labels),
-             metrics.log_loss(true_labels, U_assignments))
+        # print "k=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. Acc: %0.3f. LL: %0.3f." \
+        #   % (num_clusters, len(pred_labels), metrics.v_measure_score(true_labels, pred_labels),
+        #      metrics.homogeneity_score(true_labels, pred_labels),
+        #      metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
+        #      metrics.normalized_mutual_info_score(true_labels, pred_labels),
+        #      metrics.accuracy_score(true_labels, pred_labels),
+        #      metrics.log_loss(true_labels, U_assignments))
 
         v = ("V-measure: %0.3f" % metrics.v_measure_score(true_labels, pred_labels))
         if v > max_v:
             max_v = v
             num_c = n_comps
+
+        repeat["v"].append(metrics.v_measure_score(true_labels, pred_labels))
+        repeat["ho"].append(metrics.homogeneity_score(true_labels, pred_labels))
+        repeat["co"].append(metrics.completeness_score(true_labels, pred_labels))
+        repeat["mi"].append(metrics.mutual_info_score(true_labels, pred_labels))
+        repeat["nmi"].append(metrics.normalized_mutual_info_score(true_labels, pred_labels))
+        repeat["a"].append(metrics.accuracy_score(true_labels, pred_labels))
+    print "Overall: "
+    for key, val in repeat.items():
+        print key, sum(val)/float(len(val))
+    print "\n"
+
+
 
     U, Sigma, VT = randomized_svd(data, n_components=num_c, n_iter=5, random_state=None)
     true_labels, pred_labels = [], []
@@ -179,6 +141,8 @@ def svd_clusters(term_freq, all_labels, threshold=0.01, random=False):
         if np.max(abs(doc)) > threshold:
             pred_labels.append(np.argmax(doc))
             true_labels.append(label)
+
+    return VT
 
     # print "k=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f." \
     #       % (num_c, len(pred_labels),  metrics.v_measure_score(true_labels, pred_labels),
@@ -204,7 +168,7 @@ def compare_two_LSA_models(topic_word1, code_book1, topic_word2, code_book2, tit
         # for j in list(cosine_matrix[i]):
         #     print type(j), j, "%0.2f" % j
 
-    plot_topic_similarity_matrix(cosine_matrix, title)
+    vis.plot_topic_similarity_matrix(cosine_matrix, title)
 
     reordering = np.argmax(cosine_matrix, axis=1)
     reordered = cosine_matrix[:,reordering]
@@ -221,6 +185,68 @@ def compare_two_LSA_models(topic_word1, code_book1, topic_word2, code_book2, tit
     if raw_input("press y for genome graph comparisons of the learned topics...")== "y":
         for i in xrange(11):
             genome(f1[i], f2[reordering[i]])
+
+
+
+
+
+def create_feature_spaces_over_codebooks(topic_word1, code_book1, topic_word2, code_book2):
+
+    list_of_cross_over_hashes = []
+    global_codebook = code_book1
+    for ind2, hash in enumerate(code_book2):
+        if hash in code_book1:
+            ind1 = np.where(code_book1 == hash)[0][0]  # Or use something quicker like: code_book1.find(hash) (which doesnt exist in np < 2.0.0)
+            # print "in:", ind1, ind2
+            list_of_cross_over_hashes.append( (ind1, ind2))
+        else:
+            global_codebook = np.append(global_codebook, hash)
+
+    print "\nlen global codebook:", len(global_codebook)
+    (n_topics1, n_features1) = topic_word1.shape
+    (n_topics2, n_features2) = topic_word2.shape
+
+    # Create f1 feature space over the new global code book.
+    f1 = np.zeros( (n_topics1, len(global_codebook)))
+
+    for cnt, row in enumerate(topic_word1):
+        f1[cnt][:n_features1] = row
+
+    # print ">", f1[0], f1.shape, len(f1[0])
+    # print ">", topic_word1[0]
+    print "> crossovers", len(list_of_cross_over_hashes)
+
+    f2 = np.zeros( (n_topics2, len(global_codebook)))
+
+    # CROSS OVER CODE WORDS
+    for cnt, (ind1, ind2) in enumerate(list_of_cross_over_hashes):
+        keep_col = topic_word2.T[ind2]
+        # print "a:", cnt, ind1, ind2, len(f2.T[ind1][:n_topics2]), len(f2.T[ind1]), len(keep_col)
+        # f2.T[ind1][:n_topics2] = keep_col
+        f2.T[ind1] = keep_col
+
+    print ">", f2.shape
+
+    # Then remove the cross over code words.
+    only_ind2s = [j for i, j in list_of_cross_over_hashes]
+    for ind2 in sorted(only_ind2s, reverse=True):
+        topic_word2 = scipy.delete(topic_word2, ind2, 1)
+
+    # Finally stick the vectors onto the end of each row in f2 feature space
+    for cnt, row in enumerate(topic_word2):
+        # if cnt in [ i for i, j in list_of_cross_over_hashes]:
+        #     continue
+        remaining_inds = len(global_codebook) - n_features2 + len(list_of_cross_over_hashes)
+        f2[cnt][remaining_inds:] = row
+
+    print "new feature space shapes:", f1.shape, f2.shape
+    return f1, f2, global_codebook
+
+
+
+
+
+
 
 def plot_confusion_matrix(cm, classes, title='Confusion matrix', cmap=plt.cm.Blues):
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
@@ -321,7 +347,6 @@ def get_supervised_svm(path, tf_data=None, which_features="features"):
     pred_labels, true_labels = [], []
 
     print data[0]
-
     for fold in [0,1,2,3,4]:  #folds
         X_test, X_train, y_train = [], [], []
         for cnt, (i, j) in enumerate(zip(data, all_labels)):
@@ -355,8 +380,6 @@ def get_supervised_svm(path, tf_data=None, which_features="features"):
              metrics.completeness_score(true_labels, pred_labels), metrics.mutual_info_score(true_labels, pred_labels),
              metrics.normalized_mutual_info_score(true_labels, pred_labels),
              metrics.accuracy_score(true_labels, pred_labels))
-
-    # print "overall avg accu:", sum(avg_acc)/float(5)
 
 
 def compare_LDA_over_different_data(path, segmented_data):

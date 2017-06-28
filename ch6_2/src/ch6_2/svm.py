@@ -54,7 +54,7 @@ def run_svm(data, labels):
 def kmeans_clustering(data, true_labels, threshold=0.01):
 
     n_samples, n_features = data.shape
-
+    print "data: ", data.shape
     # determine your range of K
     k_range = range(10, 11)
     repeat = {"v": [], "ho": [], "co": [], "mi": [], "nmi": []}
@@ -97,8 +97,6 @@ def kmeans_clustering(data, true_labels, threshold=0.01):
     print "Overall: "
     for key, val in repeat.items():
         print key, sum(val)/float(len(val))
-    print "\n"
-
 
 ##############################################
 ##    SEGMENTATION ANALYSIS:

@@ -8,6 +8,7 @@ import getpass
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy
 from scipy.stats import threshold
 import pdb
 import lda
@@ -17,6 +18,8 @@ import ch6_2.visualisations as vis
 import ch6_2.create_term_freq as fr
 import ch6_2.LSA as lsa
 import ch6_2.svm as supervised
+from sklearn.metrics.pairwise import cosine_similarity
+import hungarian
 
 def get_dic_codebook(code_book, graphlets, create_graphlet_images=False):
     """code book already contains stringed hashes. """
@@ -45,6 +48,18 @@ def object_nodes(graph):
         if node['node_type'] == 'temporal_relation':
             temp_nodes.append(node['name'])
     return object_nodes, spatial_nodes, temp_nodes
+
+def just_topic_model(term_freq,   n_iters, n_topics, (alpha, eta)):
+    X = term_freq
+    print "sum of all data: X.shape: %s and X.sum: %s" % (X.shape, X.sum())
+
+    model = lda.LDA(n_topics=n_topics, n_iter=n_iters, random_state=1, alpha=alpha, eta=eta)
+    model.fit(X)
+
+    feature_freq = (X != 0).sum(axis=0)
+    doc_lengths = (X != 0).sum(axis=1)
+    return model.topic_word_
+
 
 def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh=0, _lambda=0.5):
     X = term_freq
@@ -103,7 +118,6 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     # ****************************************************************************************************
     true_labels, pred_labels, videos, relevant_words = investigate_topics(model, code_book, true_labels, true_videos, probability_of_words, _lambda, n_top_words=30)
 
-    invesitgate_videos_given_topics(pred_labels, true_videos)
     print "\nvideos classified:", len(true_labels), len(pred_labels)
 
     # ****************************************************************************************************
@@ -167,7 +181,7 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     # for i in xrange(11):
     #     vis.genome(model.topic_word_[i], i)
 
-    return
+    return model.topic_word_
 
 def investigate_topics(model, code_book, labels, videos, prob_of_words, _lambda, n_top_words = 30):
     """investigate the learned topics
@@ -260,135 +274,42 @@ def investigate_topics(model, code_book, labels, videos, prob_of_words, _lambda,
 
     return true_labels, pred_labels, videos, relevant_words
 
-def invesitgate_videos_given_topics(pred_labels, video_list):
-    # print "\nvideos assigned to each topic: "
 
-    # print "3"
-    # import pdb; pdb.set_trace()
+def compare_two_topic_models((topic_word1, code_book1), \
+                            (topic_word2, code_book2), title=""):
 
-    topics_to_videos = {}
-    num_of_topics = max(pred_labels)+1
-    for topic_id in xrange(num_of_topics):
-        topics_to_videos[topic_id] = []
-        for label, video in zip(pred_labels, video_list):
-            if topic_id == label:
-                topics_to_videos[topic_id].append(video.replace("vid", ""))
-        # print "\ntopic: %s:  %s" % (topic_id, topics_to_videos[topic_id])
+    #Adjust the columns on two topic_word matrices, and use hungarian alg to find best matches.
 
-    # print "4"
-    # import pdb; pdb.set_trace()
-    return
+    print "shape of both codebooks:", len(code_book1), len(code_book2)
+    f1, f2, global_codebook = lsa.create_feature_spaces_over_codebooks(topic_word1, code_book1, topic_word2, code_book2)
 
+    cosine_matrix = cosine_similarity(f1, f2)
+    print "cosine matrix shape:", cosine_matrix.shape
+    # returns: rows: n_samples_X by columns: n_samples_Y.
+    cosine_matrix[cosine_matrix < 0.001] = 0  # All low values set to 0
+    for i in xrange(cosine_matrix.shape[0]):
+        print list(cosine_matrix[i])
+        # for j in list(cosine_matrix[i]):
+        #     print type(j), j, "%0.2f" % j
 
-def online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0, kappa, batchsize, class_thresh):
+    vis.plot_topic_similarity_matrix(cosine_matrix, title)
 
-    wordids, wordcts, sorted_labels, true_videos = online_data
+    reordering = np.argmax(cosine_matrix, axis=1)
+    reordered = cosine_matrix[:,reordering]
+    hungarian_out = hungarian.lap( (np.ones(reordered.shape) - reordered))
 
-    num_iters = int(len(wordids)/float(batchsize))
+    matches = []
+    print "hungarian alg say: "
+    for i, j in zip(hungarian_out[0], hungarian_out[1]):
+        print "row %s, column %s match with score: %s" % (i, j, reordered[i][j])
+        matches.append(reordered[i][j])
+    average_sim = sum(matches) / float(len(matches))
+    print "avg simi: %s" % average_sim
 
-    true_labels, pred_labels = [], []
-    olda = OLDA.OnlineLDA(code_book, K, D, alpha, eta, tau0, kappa, 0)
+    if raw_input("press y for genome graph comparisons of the learned topics...")== "y":
+        for i in xrange(11):
+                vis.genome(f1[i], f2[reordering[i]])
 
-    # import random
-    # a = ordered_labels
-    # b = ordered_vid_names
-    # c = list(zip(a, b))
-    # random.shuffle(c)
-    # ordered_labels, ordered_vid_names = zip(*c)
-
-    for iteration in range(0, num_iters):
-        # iteration = num_iters - iteration
-
-        # print "it: %s. " %iteration #start: %s. end: %s" % (iteration, iteration*batchsize, (iteration+1)*batchsize)
-        ids = wordids[iteration*batchsize:(iteration+1)*batchsize]
-        cts = wordcts[iteration*batchsize:(iteration+1)*batchsize]
-
-        labels = sorted_labels[iteration*batchsize:(iteration+1)*batchsize]
-        vids = true_videos[iteration*batchsize:(iteration+1)*batchsize]
-
-        (gamma, bound) = olda.update_lambda(ids, cts, dbg=False)
-        print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
-
-        thresholded_true, thresholded_pred = [], []
-        for n, gam in enumerate(gamma):
-            gam = gam / float(sum(gam))
-
-            if max(gam) > class_thresh:
-                # thresholded_true.append(ordered_labels[n])
-                thresholded_true.append(labels[n])
-                thresholded_pred.append(np.argmax(gam))
-
-        # true_labels.extend(labels)
-        # pred_labels.extend([np.argmax(i) for i in gamma])
-        true_labels.extend(thresholded_true)
-        pred_labels.extend(thresholded_pred)
-
-        word_counter = 0
-        for i in cts:
-            word_counter+=sum(i)
-
-        perwordbound = bound * len(wordids) / (D * word_counter)
-
-        print 'iter: %s:  rho_t = %f,  held-out per-word perplexity estimate = %f. LDA - Done\n' % \
-            (iteration, olda._rhot, np.exp(-perwordbound))
-
-        if (iteration % 1 == 0):
-            # import pdb; pdb.set_trace()
-            np.savetxt(directory + '/oldaData/lambda-%d.dat' % iteration, olda._lambda)
-            np.savetxt(directory + '/oldaData/gamma-%d.dat' % iteration, gamma)
-
-            np.savetxt(directory + '/oldaData/vids-%d.dat' % iteration, vids, delimiter=" ", fmt="%s")
-            np.savetxt(directory + '/oldaData/labels-%d.dat' % iteration, labels, delimiter=" ", fmt="%s")
-
-    n, l, v, h, c, mi, nmi, a, mat, labs = vis.print_results(true_labels, pred_labels, K)
-    # ****************************************************************************************************
-    # do a final E-step on all the data :)
-    # ****************************************************************************************************
-    rhot = pow(olda._tau0 + olda._updatect, -olda._kappa)
-    olda._rhot = rhot
-    (gamma, sstats) = olda.do_e_step(wordids, wordcts)
-
-    # import pdb; pdb.set_trace()
-    y_true, y_pred = [], []
-    for n, gam in enumerate(gamma):
-        gam = gam / float(sum(gam))
-
-        if max(gam) > class_thresh:
-            # thresholded_true.append(ordered_labels[n])
-            y_true.append(sorted_labels[n])
-            y_pred.append(np.argmax(gam))
-
-    n, l, v, h, c, mi, nmi, a, mat, labs = vis.print_results(y_true, y_pred, K)
-
-    # ****************************************************************************************************
-    # Write out a file of results
-    # ****************************************************************************************************
-    name = '/oldaData/results_vb.txt'
-    f1 = open(directory+name, 'w')
-    f1.write('n_topics: %s \n' % K)
-    f1.write('dirichlet_params: (%s, %s) \n' % (alpha, eta))
-    f1.write('class_thresh: %s \n' % class_thresh)
-    f1.write('code book length: %s \n' % len(code_book))
-    # f1.write('sum of all words: %s \n' % sum_of_all_words)
-    f1.write('videos classified: %s \n \n' % len(pred_labels))
-
-    f1.write('v-score: %s \n' % v)
-    f1.write('homo-score: %s \n' % h)
-    f1.write('comp-score: %s \n' % c)
-    f1.write('mi: %s \n' % mi)
-    f1.write('nmi: %s \n \n' % nmi)
-    f1.write('mat: \n')
-
-    headings = ['{:3d}'.format(int(r)) for r in xrange(n_topics)]
-    f1.write('T = %s \n \n' % headings)
-    for row, lab in zip(mat, labs):
-        text_row = ['{:3d}'.format(int(r)) for r in row]
-        f1.write('    %s : %s \n' % (text_row, lab))
-    f1.write('\n')
-    # f1.write('relevant_words: \n')
-    # for i, words in relevant_words[percentage].items():
-    #     f1.write('Topic %s : %s \n' % (i, words[:10]))
-    f1.close()
 
 
 if __name__ == "__main__":
@@ -406,31 +327,57 @@ if __name__ == "__main__":
     create_graphlet_images = False
 
     # ****************************************************************************************************
-    # Term Frequency
+    # Load Term Frequency
     # ****************************************************************************************************
     term_freq, online_data, code_book, graphlets = fr.load_term_frequency(directory, run)
+    wordids, wordcts, true_labels, video_uuids = online_data
+
+    # # ****************************************************************************************************
+    # # Segmented Term Freq
+    # # ****************************************************************************************************
     low_pass_instance = 5
+    term_freq_seg_red, code_book_seg_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
 
 
-    term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
+    # ****************************************************************************************************
+    # Concatenated Term-Freq Matrix
+    # ****************************************************************************************************
+    term_freq_concat_dic = {}
+    for i, uuid in enumerate(video_uuids):
+        if uuid not in term_freq_concat_dic:
+            term_freq_concat_dic[uuid] = term_freq[i]
+        else:
+            term_freq_concat_dic[uuid] += term_freq[i]
+
+    concat_uuids = [uuid for uuid in term_freq_concat_dic.keys()]
+    term_freq_concat = np.vstack([hist for hist in term_freq_concat_dic.values()])
+
+    term_freq_concat_red, code_book_concat_red, graphlets_red =  fr.high_instance_code_words(term_freq_concat, code_book, graphlets, low_pass_instance)
+
 
     # # ****************************************************************************************************
     # # Supervised SVM
     # # ****************************************************************************************************
     labels = online_data[2]
-    supervised.run_svm(term_freq_red, labels)
-    supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # supervised.run_svm(term_freq_red, labels)
+    # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
     #
     # # ****************************************************************************************************
     # # call batch LSA
     # # ****************************************************************************************************
     print "\nLSA: "
-    lsa.svd_clusters(term_freq_red, labels)
+
+    lsa_Vt1 = lsa.svd_clusters(term_freq_seg_red, labels)
+    lsa_Vt2 = lsa.svd_clusters(term_freq_concat_red, labels)
+
+    title = "Cosine Similarity Between Two LSA Models"
+    lsa.compare_two_LSA_models(lsa_Vt1, code_book_seg_red, lsa_Vt2, code_book_concat_red, title)
 
     # print "\Random clustering: "
     # lsa.svd_clusters(term_freq_red, labels, n_comps=10, random=True)
     # print "LSA done"
     #
+    # import pdb; pdb.set_trace()
 
     # ****************************************************************************************************
     # call batch LDA
@@ -444,21 +391,11 @@ if __name__ == "__main__":
 
     directory = os.path.join(directory, "QSR_path/run_%s" % run)
 
-    # run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
-    run_topic_model(term_freq_red, code_book_red, graphlets_red, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
-    print "LDA done"
+    phi_2 = just_topic_model(term_freq_concat_red, n_iters, n_topics, (alpha, eta))
+    print "\nConcatenated LDA done"
 
-    # ****************************************************************************************************
-    # run online LDA
-    # ****************************************************************************************************
-    print "\nOnline LDA: "
-    K = 11
-    D = 500
-    alpha, eta = 0.1, 0.03
-    tau0 = 10
-    kappa = 0.7
-    batchsize = 5
+    phi_1 = run_topic_model(term_freq_seg_red, code_book_seg_red, graphlets_red, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
+    print "\nSegmented LDA done"
 
-    raw_input("run online LDA:")
-    online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0,kappa,batchsize, class_thresh)
-    print "Online LDA done"
+    title = "Cosine Similarity Between Two Topic Models"
+    compare_two_topic_models((phi_1, code_book_seg_red), (phi_2, code_book_concat_red), title)

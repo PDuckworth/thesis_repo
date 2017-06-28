@@ -247,16 +247,6 @@ def get_sentance_annotation(vid):
 
 if __name__ == "__main__":
 
-    # ****************************************************************************************************
-    # parameters
-    # ****************************************************************************************************
-    data_subset = False
-    frame_rate_reduce = 1     # drop every other frame - before median filter applies
-    mean_window = 1 # use scipy medfilt with the window_size - after down sampling frame rate
-    qsr_median_window = 10
-    tpcc = True
-    objects_inc_type = True
-
     # create a QSRlib object if there isn't one already
     qsrlib = QSRlib()
     uuids, labels, wordids, wordcts = [], [], [], []
@@ -269,14 +259,13 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     static_objects = get_soma_objects()
     #static_objects = get_point_cloud_objects(os.path.join(path, "point_cloud_object_clusters"))
-    # import pdb; pdb.set_trace()
 
 
     # ****************************************************************************************************
     # data directories
     # ****************************************************************************************************
 
-    directory = os.path.join(path, 'dataset_segmented_15_12_16')
+    directory = os.path.join(path, 'dataset_not_segmented')
     qsr_dir = os.path.join(directory, "QSR_path")
     if not os.path.exists(qsr_dir): os.makedirs(qsr_dir)
 
@@ -292,8 +281,16 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # Dynamic Args list
     # ****************************************************************************************************
+
+    data_subset = False
+    frame_rate_reduce = 1     # drop every other frame - before median filter applies
+    mean_window = 11          # use scipy medfilt with the window_size - after down sampling frame rate
+    qsr_median_window = 5
+    tpcc = True
+    objects_inc_type = True
+
     which_qsr=["argd", "qtcbs"]
-    objects_used = ['left_hand', 'right_hand', 'torso']
+    objects_used = ['left_hand', 'right_hand'] #, 'torso']
 
     qsrs_for = []
     for selected_joint in objects_used:
@@ -313,8 +310,8 @@ if __name__ == "__main__":
 
     dynamic_args = { "qtcbs": {"qsrs_for" : qsrs_for, "no_collapse": True, "quantisation_factor":0.1, "validate":False },
                      "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},
-                    #"qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4}, "object_types": object_types},
-                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
+                    #  "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.3, 'Ignore': 10}},
+                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 3, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
                      "filters" : {"median_filter": {"window": qsr_median_window}}}
 
     # ****************************************************************************************************
@@ -351,176 +348,183 @@ if __name__ == "__main__":
             #     f1.write('%s: %s \n \n' % (k, v))
 
     ### load file of dates vs clips
-    videos_by_day = seg.segmented_videos()
 
     counter = 1
-    # for counter, task in enumerate(sorted(os.listdir(directory))):
-    for date in sorted(videos_by_day.keys()):
-        print date
+    for counter, task in enumerate(sorted(os.listdir(directory))):
 
-        for task in videos_by_day[date]:
-            # if '196' in task or '211' in task: continue
-            video = "%s.p" % task
-            d_video = os.path.join(directory, task)
+        # if '196' in task or '211' in task: continue
+        if 'QSR_path' in task: continue
+        video = "%s.p" % task
+        d_video = os.path.join(directory, task)
+        print task
+        # ****************************************************************************************************
+        # open file
+        # ****************************************************************************************************
+        d_sk = os.path.join(d_video, 'skeleton')
+        d_robot = os.path.join(d_video, 'robot')
 
-            # ****************************************************************************************************
-            # open file
-            # ****************************************************************************************************
-            d_sk = os.path.join(d_video, 'skeleton')
-            d_robot = os.path.join(d_video, 'robot')
-            try:
-                with open(os.path.join(d_video, 'label.txt')) as f:
-                    for i, row in enumerate(f):
-                        # print row
-                        if i == 0:
-                            (date, _id) = row.replace("\n", "").split("/")
-                        if i == 1:
-                            label = row
-                    time, uuid = _id.replace("\r", "").split("_")
-                print "> %s, %s, %s, %s, %s, %s" % (counter, task, date, time, uuid, label)
-                counter+=1
+        # ****************************************************************************************************
+        # read human pose and robot files
+        # ****************************************************************************************************
+        sk_files = [f for f in sorted(os.listdir(d_sk)) if os.path.isfile(os.path.join(d_sk, f))]
+        r_files = [f for f in sorted(os.listdir(d_robot)) if os.path.isfile(os.path.join(d_robot,f))]
 
-            except IOError:
-                print "no labels here: %s" % d_video
-                continue
+        # Get the event labels
+        label = {}
+        if os.path.isfile(os.path.join(d_video, 'labels.txt')):
+            f1 = open(os.path.join(d_video, 'labels.txt'), 'r')
+            for count, line in enumerate(f1):
+                line_ = line.split('\n')[0].split(':')
+                activity_class = line_[1]
 
-            # ****************************************************************************************************
-            # read human pose and robot files
-            # ****************************************************************************************************
-            sk_files = [f for f in sorted(os.listdir(d_sk)) if os.path.isfile(os.path.join(d_sk, f))]
-            r_files = [f for f in sorted(os.listdir(d_robot)) if os.path.isfile(os.path.join(d_robot,f))]
+                if activity_class != 'making_tea':
+                    start, end = line_[2].split(',')
+                    label[count] = (activity_class, int(start), int(end))
 
-            # ****************************************************************************************************
-            # skeleton and robot data
-            # ****************************************************************************************************
-            skeleton_data, robot_data = {}, {}
-            for _file in sorted(sk_files):
-                frame = int(_file.replace(".txt", ""))
-                if frame % frame_rate_reduce != 0: continue
+        # filter the first and final 15 frames from the non segmented videos.
+        if len(label) is 0:
+            label = {0: ("NA", 15, len(sk_files)-15)}
+            classes = 'N/A'
+        else:
+            classes = ":".join([ a for (a, s, e) in label.values()])
+            label = {0 : (classes, 5, len(sk_files)-15)}
 
-                skeleton_data[frame] = get_sk_info(open(os.path.join(d_sk, _file),'r'))   # old ECAI data format.
-                robot_data[frame] = get_rob_info(open(os.path.join(d_robot,_file),'r'))
+        # ****************************************************************************************************
+        # skeleton and robot data
+        # ****************************************************************************************************
+        skeleton_data, robot_data = {}, {}
+        for _file in sorted(sk_files):
 
-            # ****************************************************************************************************
-            # filter skeleton data
-            # ****************************************************************************************************
-            f_skeleton_data, camera_world = apply_median_filter(skeleton_data, mean_window, vis=False)
+            frame = int(_file.replace(".txt", "").replace("skl_", ""))
+            if frame % frame_rate_reduce != 0: continue
 
-            # ****************************************************************************************************
-            # transform to map coordinate frame
-            # ****************************************************************************************************
-            ob_states={}
-            map_world = World_Trace()
-            map_skeleton_data = {}
+            skeleton_data[frame] = get_sk_info(open(os.path.join(d_sk, _file),'r'))   # old ECAI data format.
 
-            for cnt, (frame, sk_data) in enumerate(sorted(skeleton_data.items())):
-                xr, yr, zr = robot_data[frame][0]
-                yawr = robot_data[frame][1][2]
-                pr = robot_data[frame][1][1]
+            rob_frame = _file.replace("skl", "robot")
+            robot_data[frame] = get_rob_info(open(os.path.join(d_robot, rob_frame),'r'))
 
-                map_skeleton_data[frame] = {}
+        # ****************************************************************************************************
+        # filter skeleton data
+        # ****************************************************************************************************
+        f_skeleton_data, camera_world = apply_median_filter(skeleton_data, mean_window, vis=False)
 
-                for joint, (y,z,x,x2d,y2d) in sorted(f_skeleton_data[frame].items()):
-                    # transformation from camera to map
-                    rot_y = np.matrix([[np.cos(pr), 0, np.sin(pr)], [0, 1, 0], [-np.sin(pr), 0, np.cos(pr)]])
-                    rot_z = np.matrix([[np.cos(yawr), -np.sin(yawr), 0], [np.sin(yawr), np.cos(yawr), 0], [0, 0, 1]])
-                    rot = rot_z*rot_y
+        # ****************************************************************************************************
+        # transform to map coordinate frame
+        # ****************************************************************************************************
+        ob_states={}
+        map_world = World_Trace()
+        map_skeleton_data = {}
 
-                    # robot's position in map frame
-                    pos_r = np.matrix([[xr], [yr], [zr+1.66]])
+        for cnt, (frame, sk_data) in enumerate(sorted(skeleton_data.items())):
+            xr, yr, zr = robot_data[frame][0]
+            yawr = robot_data[frame][1][2]
+            pr = robot_data[frame][1][1]
 
-                    # person's position in camera frame
-                    pos_p = np.matrix([[x], [-y], [z]])
+            map_skeleton_data[frame] = {}
 
-                    # person's position in map frame
-                    map_pos = rot*pos_p+pos_r
-                    x_mf, y_mf, z_mf = map_pos.flat
-                    map_skeleton_data[frame][joint] = (x_mf, y_mf, z_mf)
+            for joint, (y,z,x,x2d,y2d) in sorted(f_skeleton_data[frame].items()):
+                # transformation from camera to map
+                rot_y = np.matrix([[np.cos(pr), 0, np.sin(pr)], [0, 1, 0], [-np.sin(pr), 0, np.cos(pr)]])
+                rot_z = np.matrix([[np.cos(yawr), -np.sin(yawr), 0], [np.sin(yawr), np.cos(yawr), 0], [0, 0, 1]])
+                rot = rot_z*rot_y
 
-                    # ****************************************************************************************
-                    # create World Trace
-                    # ****************************************************************************************
-                    if joint not in ob_states.keys():
-                        ob_states[joint] = [Object_State(name=joint, timestamp=cnt, x=x_mf, y=y_mf, z=z_mf)]
-                    else:
-                        ob_states[joint].append(Object_State(name=joint, timestamp=cnt, x=x_mf, y=y_mf, z=z_mf))
+                # robot's position in map frame
+                pos_r = np.matrix([[xr], [yr], [zr+1.66]])
 
-                # add objects to object states
-                for ob, (x,y,z) in static_objects.items():
-                    # print object, x,y,z
-                    if ob not in ob_states.keys():
-                        ob_states[ob] = [Object_State(name=str(ob), timestamp=cnt, x=x, y=y, z=z)]
-                    else:
-                        ob_states[ob].append(Object_State(name=str(ob), timestamp=cnt, x=x, y=y, z=z))
+                # person's position in camera frame
+                pos_p = np.matrix([[x], [-y], [z]])
 
-                # add the robot position
-                if 'robot' not in ob_states.keys():
-                    ob_states['robot'] = [Object_State(name='robot', timestamp=cnt, x=xr, y=yr, z=zr)]
+                # person's position in map frame
+                map_pos = rot*pos_p+pos_r
+                x_mf, y_mf, z_mf = map_pos.flat
+                map_skeleton_data[frame][joint] = (x_mf, y_mf, z_mf)
+
+                # ****************************************************************************************
+                # create World Trace
+                # ****************************************************************************************
+                if joint not in ob_states.keys():
+                    ob_states[joint] = [Object_State(name=joint, timestamp=cnt, x=x_mf, y=y_mf, z=z_mf)]
                 else:
-                    ob_states['robot'].append(Object_State(name='robot', timestamp=cnt, x=xr, y=yr, z=zr))
+                    ob_states[joint].append(Object_State(name=joint, timestamp=cnt, x=x_mf, y=y_mf, z=z_mf))
 
-            # add all the object states to the World Trace
-            for k, object_state in ob_states.items():
-                # print "added: %s object state" % k
-                map_world.add_object_state_series(object_state)
+            # add objects to object states
+            for ob, (x,y,z) in static_objects.items():
+                # print object, x,y,z
+                if ob not in ob_states.keys():
+                    ob_states[ob] = [Object_State(name=str(ob), timestamp=cnt, x=x, y=y, z=z)]
+                else:
+                    ob_states[ob].append(Object_State(name=str(ob), timestamp=cnt, x=x, y=y, z=z))
 
-            # ****************************************************************************************************
-            # Call QSRLib
-            # ****************************************************************************************************
-            # f = open(qsr_path + "/WorldTraces/%s.p" % task, "w")
-            # pickle.dump((map_world, camera_world), f, 2)
-
-            qsrlib_request_message = QSRlib_Request_Message(which_qsr, map_world, dynamic_args)
-            map_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
-
-            # objects_in_graphs = set([])
-            # for igraph in map_response_message.qstag.graphlets.graphlets.values():
-            # #    print(igraph)
-            #    for i in object_nodes(igraph):
-            #         objects_in_graphs.add(i)
-
-            # pretty_print_world_qsr_trace(which_qsr, map_response_message)
-            # print(map_response_message.qstag.graphlets.code_book)
-            # print(map_response_message.qstag.graphlets.histogram)
-            # print len(map_response_message.qstag.graphlets.histogram)
-            # print objects_in_graphs
-
-            # ****************************************************************************************************
-            # add TPCC relations - from camera_world
-            # ****************************************************************************************************
-            if tpcc:
-                req = QSRlib_Request_Message(which_qsr="tpcc", input_data=camera_world, dynamic_args=dynamic_args)
-                camera_response_message = qsrlib.request_qsrs(req_msg=req)
-                # pretty_print_world_qsr_trace("tpcc", camera_response_message)
-                feature_spaces = [map_response_message.qstag.graphlets, camera_response_message.qstag.graphlets]
+            # add the robot position
+            if 'robot' not in ob_states.keys():
+                ob_states['robot'] = [Object_State(name='robot', timestamp=cnt, x=xr, y=yr, z=zr)]
             else:
-                feature_spaces =[map_response_message.qstag.graphlets]
+                ob_states['robot'].append(Object_State(name='robot', timestamp=cnt, x=xr, y=yr, z=zr))
 
-            # ****************************************************************************************************
-            # Create sparse histogram and code words
-            # ****************************************************************************************************
-            histogram = np.array([0] * (global_codebook.shape[0]))
-            for cnt, f in enumerate(feature_spaces):
-                for freq, hash in zip(f.histogram, f.code_book):
-                    hash_s = "{:20d}".format(hash).lstrip() # string
+        # add all the object states to the World Trace
+        for k, object_state in ob_states.items():
+            # print "added: %s object state" % k
+            map_world.add_object_state_series(object_state)
 
-                    try:
-                        ind = np.where(global_codebook == hash_s)[0][0]
-                        histogram[ind] += freq
-                    except IndexError:
-                        global_codebook = np.append(global_codebook, hash_s)
-                        histogram = np.append(histogram, freq)
-                        all_graphlets = np.append(all_graphlets, f.graphlets[hash])
+        # ****************************************************************************************************
+        # Call QSRLib
+        # ****************************************************************************************************
+        # f = open(qsr_path + "/WorldTraces/%s.p" % task, "w")
+        # pickle.dump((map_world, camera_world), f, 2)
 
-            uuids.append(uuid)
-            labels.append(label)
-            ids = np.nonzero(histogram)[0]
-            # wordids.append(ids)
-            # wordcts.append(histogram[ids])
-            data_to_store = (uuid, label, ids, histogram[ids])
-            f = open(qsr_path + "/%s.p" % task, "w")
-            pickle.dump(data_to_store, f, 2)
-            f.close()
+        qsrlib_request_message = QSRlib_Request_Message(which_qsr, map_world, dynamic_args)
+        map_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
+
+        # objects_in_graphs = set([])
+        # for igraph in map_response_message.qstag.graphlets.graphlets.values():
+        # #    print(igraph)
+        #    for i in object_nodes(igraph):
+        #         objects_in_graphs.add(i)
+
+        # pretty_print_world_qsr_trace(which_qsr, map_response_message)
+        # print(map_response_message.qstag.graphlets.code_book)
+        # print(map_response_message.qstag.graphlets.histogram)
+        # print len(map_response_message.qstag.graphlets.histogram)
+        # print objects_in_graphs
+
+        # ****************************************************************************************************
+        # add TPCC relations - from camera_world
+        # ****************************************************************************************************
+        if tpcc:
+            req = QSRlib_Request_Message(which_qsr="tpcc", input_data=camera_world, dynamic_args=dynamic_args)
+            camera_response_message = qsrlib.request_qsrs(req_msg=req)
+            # pretty_print_world_qsr_trace("tpcc", camera_response_message)
+            feature_spaces = [map_response_message.qstag.graphlets, camera_response_message.qstag.graphlets]
+        else:
+            feature_spaces =[map_response_message.qstag.graphlets]
+
+        # ****************************************************************************************************
+        # Create sparse histogram and code words
+        # ****************************************************************************************************
+        histogram = np.array([0] * (global_codebook.shape[0]))
+
+        for cnt, f in enumerate(feature_spaces):
+            for freq, hash in zip(f.histogram, f.code_book):
+                hash_s = "{:20d}".format(hash).lstrip() # string
+
+                try:
+                    ind = np.where(global_codebook == hash_s)[0][0]
+                    histogram[ind] += freq
+                except IndexError:
+                    global_codebook = np.append(global_codebook, hash_s)
+                    histogram = np.append(histogram, freq)
+                    all_graphlets = np.append(all_graphlets, f.graphlets[hash])
+
+        uuids.append(task)
+        labels.append(classes)
+        ids = np.nonzero(histogram)[0]
+        # wordids.append(ids)
+        # wordcts.append(histogram[ids])
+
+        data_to_store = (task, classes, ids, histogram[ids])
+        f = open(qsr_path + "/%s.p" % task, "w")
+        pickle.dump(data_to_store, f, 2)
+        f.close()
 
     data_to_store = (global_codebook, all_graphlets, uuids, labels)
     f =open(qsr_path + "/codebook_data.p", "w")

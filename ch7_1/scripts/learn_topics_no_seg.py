@@ -46,7 +46,7 @@ def object_nodes(graph):
             temp_nodes.append(node['name'])
     return object_nodes, spatial_nodes, temp_nodes
 
-def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_image, (alpha, eta), class_thresh=0, _lambda=0.5):
+def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh=0, _lambda=0.5):
     X = term_freq
     wordids, wordcts, true_labels, true_videos = online_data
     graphlets = get_dic_codebook(code_book, graphlets, create_graphlet_images)
@@ -85,6 +85,18 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     f1 = open(directory+name, 'w')
     pickle.dump(model.topic_word_, f1, 2)
     f1.close()
+
+    name = '/TopicData/code_book.p'
+    f1 = open(directory+name, 'w')
+    pickle.dump(code_book, f1, 2)
+    f1.close()
+
+    name = '/TopicData/graphlets.p'
+    f1 = open(directory+name, 'w')
+    pickle.dump(graphlets, f1, 2)
+    f1.close()
+
+    vis.make_radar_plot(model.topic_word_)
 
     # ****************************************************************************************************
     # investigate the relevant words in each topic, and see which documents are classified into each topic
@@ -146,6 +158,7 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     f1 = open(directory+name, 'w')
     pickle.dump(confusion_dic, f1, 2)
     f1.close()
+
 
     # Draw pictures
     # for i, j in itertools.combinations(xrange(11), 2):
@@ -378,6 +391,192 @@ def online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,
     f1.close()
 
 
+
+def load_term_frequency(directory, run):
+    """Slightly different to the one in create_term_freq.py
+    This loops over files, not vid IDs.
+    """
+
+    # ****************************************************************************************************
+    # load word counts
+    # ****************************************************************************************************
+    r = "QSR_path/run_%s" % run
+    directory = os.path.join(directory, r)
+    print "directory: ", directory
+
+    if not os.path.exists(os.path.join(directory, 'TopicData')): os.makedirs(os.path.join(directory, 'TopicData'))
+    if not os.path.exists(os.path.join(directory, 'oldaData')): os.makedirs(os.path.join(directory, 'oldaData'))
+
+    with open(directory+"/codebook_data.p", 'r') as f:
+        loaded_data = pickle.load(f)
+        # (global_codebook, all_graphlets, uuids, labels) = pickle.load(f)
+    # print ">>", len(global_codebook), len(all_graphlets), len(uuids), len(labels)
+    code_book = loaded_data[0]
+    graphlets = loaded_data[1]
+    codebook_lengh = len(code_book)
+
+    uuids, wordids, wordcts = [], [], []
+    video_uuids, true_labels = [], []
+    num_of_vids = len(os.listdir(directory))
+
+    for task in sorted(os.listdir(directory)):
+        if task[0].isalpha(): continue
+        d_video = os.path.join(directory, task)
+        if not os.path.isfile(d_video): continue
+        with open(d_video, 'r') as f:
+            try:
+                (uuid, label, ids, histogram) = pickle.load(f)
+            except:
+                "failed to load properly: \n %s" % (task)
+
+        wordids.append(ids)
+        wordcts.append(histogram)
+        # true_videos.append(video)
+        video_uuids.append(uuid)
+        true_labels.append(label)
+
+    print "#videos: ", len(wordids), len(wordcts)
+    online_data = wordids, wordcts, true_labels, video_uuids
+
+    # ****************************************************************************************************
+    # Term-Freq Matrix
+    # ****************************************************************************************************
+    term_freq = fr.term_frequency_mat(codebook_lengh, wordids, wordcts)
+
+    return term_freq, online_data, code_book, graphlets
+
+
+def nonsegmented_evaluation(doc_topic, true_labels, threshold):
+
+    label_dict = {}
+    all_labels = []
+    for cnt, lab in enumerate(true_labels):
+        #if "print" in lab:
+        #    lab = "printing"
+        temp = lab.split(":")
+        label_dict[cnt] = temp
+        all_labels.extend(temp)
+
+    unique_labels = sorted(list(set(all_labels)))
+    y_axis_labels = []
+    label_counts = {}
+
+    unique_labels = ['N/A', 'take_paper_towel', 'use_kettle', 'washing_up', 'printing_interface',  'printing_take_printout', 'take_tea_bag',  'throw_trash',   'take_from_fridge', 'use_water_cooler', 'microwaving_food']
+    #unique_labels = ['take_paper_towel', 'use_kettle', 'washing_up', 'printing', 'take_tea_bag',  'throw_trash',   'take_from_fridge', 'use_water_cooler', 'microwaving_food']
+    for label in unique_labels:
+        for cnt, multi_lab in label_dict.items():
+            if label in multi_lab:
+
+                try:
+                    label_counts[label] +=1
+                except:
+                    label_counts[label] =1
+
+    # for i, j in label_counts.items():
+    #     print i, j
+    print "\n", label_counts
+
+    print sum(label_counts.values()), doc_topic[0].shape
+
+    eval_mat1 = np.zeros((len(unique_labels), doc_topic[0].shape[0]) )
+    eval_mat2 = np.zeros((len(unique_labels), doc_topic[0].shape[0]) )
+
+    np.set_printoptions(precision=2)
+    counter = 0
+    for row_n, label in enumerate(unique_labels):
+        print "\n>>", label
+
+        y_axis_labels.append(label)
+        for ind in xrange(len(label_dict.keys())):
+            # print ind, label_dict[ind]
+
+            # if len(label_dict[ind]) > 1: continue  # THIS REDUCES THE ANALYSIS TO ONLY ONE SEGMENT VIDEOS
+
+            if label in label_dict[ind]:
+
+                # print "<", ind, gt_labs
+                doc = doc_topic[ind]
+                temp1 = [i if i > 0.0 else 0 for i in doc]
+                temp2 = [i if i > threshold else 0 for i in doc]
+                # print "?", doc, len(doc), doc.shape
+                print ">", ["%0.3f" % i if i > 0.4 else "-.---" for i in doc]
+                # print "row:", eval_mat[row_n], eval_mat[row_n].shape
+                eval_mat1[row_n] += temp1
+                eval_mat2[row_n] += temp2
+                counter+=1
+
+    print "==", counter
+    norm_row1, norm_row2 = [], []
+
+    for cnt, row in enumerate(eval_mat1):
+        norm_row1.append([ float(j)/float(sum(row)) if sum(row) !=0 else 0 for j in row])
+        print ">", sum(row), y_axis_labels[cnt], label_counts[y_axis_labels[cnt]], sum([float(j)/float( sum(row)) if sum(row) !=0 else 0 for j in row]), row
+
+    for cnt, row in enumerate(eval_mat2):
+        norm_row2.append([ float(j)/float(sum(row, 0)) if sum(row, 0) !=0 else 0 for j in row ])
+
+
+
+    for cnt, mat in enumerate([eval_mat1, norm_row1, eval_mat2, norm_row2]):
+
+        f, ax = plt.subplots(nrows=1, ncols=1)
+        plt.title("Correlation between Ground Truth Labels \nand Emergent Topics C 1 C 2", fontsize=16)
+        plt.xlabel('Learned Topics', fontsize=16)
+        plt.ylabel('Ground Truth Labels', fontsize=16)
+
+        alphas = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']
+        plt.xticks(range(len(alphas)), alphas, fontsize=16)
+        plt.yticks(range(len(y_axis_labels)), y_axis_labels, fontsize=14, color='red')
+
+        cmap=plt.cm.Blues
+        plt.imshow(mat, interpolation='nearest', cmap=cmap)
+
+        plt.tight_layout()
+        plt.colorbar()
+    plt.show()
+
+
+    fig = plt.figure()
+    cmap=plt.cm.Blues
+    # plt.tight_layout()
+
+    ax1 = fig.add_subplot(221)
+    plt.yticks(range(len(y_axis_labels)), y_axis_labels, fontsize=14)
+    plt.imshow(eval_mat1, interpolation='none', cmap=cmap)
+
+    ax2 = fig.add_subplot(222)
+    plt.imshow(norm_row1, interpolation='none', cmap=cmap)
+
+    ax3 = fig.add_subplot(223)
+    plt.yticks(range(len(y_axis_labels)), y_axis_labels, fontsize=14)
+    plt.imshow(eval_mat2,  interpolation='none', cmap=cmap)
+
+    ax4 = fig.add_subplot(224)
+    alphas = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k']
+    plt.xticks(range(len(eval_mat2)), alphas, fontsize=14)
+
+    plt.imshow(norm_row2,  interpolation='none', cmap=cmap)
+
+    plt.colorbar()
+    plt.show()
+    return
+
+
+def just_topic_model(term_freq,   n_iters, n_topics, (alpha, eta)):
+    X = term_freq
+    print "sum of all data: X.shape: %s and X.sum: %s" % (X.shape, X.sum())
+
+    model = lda.LDA(n_topics=n_topics, n_iter=n_iters, random_state=1, alpha=alpha, eta=eta)
+    model.fit(X)
+
+    feature_freq = (X != 0).sum(axis=0)
+    doc_lengths = (X != 0).sum(axis=1)
+
+    # return (doc_topic, topic_word, code_book, pred_labels, true_labels)
+    return model.doc_topic_, model.topic_word_
+
+
+
 if __name__ == "__main__":
 
     if len(sys.argv) < 2:
@@ -389,58 +588,48 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # script parameters
     # ****************************************************************************************************
-    directory = "/home/"+getpass.getuser()+"/Datasets/ECAI_Data/dataset_segmented_15_12_16"
-    create_graphlet_images = False
+    directory = "/home/"+getpass.getuser()+"/Datasets/ECAI_Data/dataset_not_segmented"
 
     # ****************************************************************************************************
     # Term Frequency
     # ****************************************************************************************************
-    term_freq, online_data, code_book, graphlets = fr.load_term_frequency(directory, run)
-    low_pass_instance = 3
-
+    low_pass_instance = 15
+    term_freq, online_data, code_book, graphlets = load_term_frequency(directory, run)
     term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
 
-    # ****************************************************************************************************
-    # Supervised SVM
-    # ****************************************************************************************************
+    # # ****************************************************************************************************
+    # # Supervised SVM
+    # # ****************************************************************************************************
     labels = online_data[2]
-    supervised.run_svm(term_freq_red, labels)
 
-    supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # supervised.run_svm(term_freq_red, labels)
+    # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    #
+    # # ****************************************************************************************************
+    # # call batch LSA
+    # # ****************************************************************************************************
+    # print "\nLSA: "
+    # lsa.svd_clusters(term_freq_red, labels)
 
-    import pdb; pdb.set_trace()
-    # ****************************************************************************************************
-    # call batch LSA
-    # ****************************************************************************************************
-    print "\nLSA: "
-    lsa.svd_clusters(term_freq_red, labels)
-    print "LSA done"
+    # print "\Random clustering: "
+    # lsa.svd_clusters(term_freq_red, labels, n_comps=10, random=True)
+    # print "LSA done"
+    #
 
     # ****************************************************************************************************
     # call batch LDA
     # ****************************************************************************************************
     print "\nLDA: "
-    n_iters = 1000
+    n_iters = 500
     n_topics = 11
-    alpha, eta = 0.5, 0.03
+    alpha, eta = 0.8, 0.03
     class_thresh = 0.5
     _lambda = 0.5 # relevance scale
 
     directory = os.path.join(directory, "QSR_path/run_%s" % run)
 
-    run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_iters, n_topics, create_graphlet_images, (alpha, eta), class_thresh, _lambda)
+    doc_topic, topic_word = just_topic_model(term_freq_red, n_iters, n_topics, (alpha, eta))
+
+    nonsegmented_evaluation(doc_topic, labels, class_thresh)
+
     print "LDA done"
-
-    # ****************************************************************************************************
-    # run online LDA
-    # ****************************************************************************************************
-    print "\nOnline LDA: "
-    K = 11
-    D = 500
-    alpha, eta = 0.1, 0.03
-    tau0 = 10
-    kappa = 0.7
-    batchsize = 5
-
-    online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0,kappa,batchsize, class_thresh)
-    print "Online LDA done"

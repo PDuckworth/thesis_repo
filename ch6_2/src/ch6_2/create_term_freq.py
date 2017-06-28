@@ -28,11 +28,11 @@ def load_term_frequency(directory, run):
     codebook_lengh = len(code_book)
 
     uuids, wordids, wordcts = [], [], []
-    true_videos, true_labels = [], []
+    video_uuids, true_labels = [], []
     num_of_vids = len(os.listdir(directory))
-    for task in xrange(1, num_of_vids+1):
 
-        if task in [196, 211]: continue
+    for task in xrange(1, num_of_vids+1):
+        # if task in [196, 211]: continue
         video = "vid%s.p" % task
         d_video = os.path.join(directory, video)
         if not os.path.isfile(d_video): continue
@@ -44,10 +44,11 @@ def load_term_frequency(directory, run):
 
         wordids.append(ids)
         wordcts.append(histogram)
-        true_videos.append(video)
+        # true_videos.append(video)
+        video_uuids.append(uuid)
         true_labels.append(label)
     print "#videos: ", len(wordids), len(wordcts)
-    online_data = wordids, wordcts, true_labels, true_videos
+    online_data = wordids, wordcts, true_labels, video_uuids
 
     # ****************************************************************************************************
     # Term-Freq Matrix
@@ -80,10 +81,12 @@ def term_frequency_mat(codebook_lengh, wordids, wordcnts):
 
 def high_instance_code_words(term_frequency, code_book, graphlets, low_instance):
     """This essentially takes the feature space created over all events, and removes any
-    feature that is not witnessed a minimum number of times (low_instance param).
+    feature that is not witnessed in a minimum number of observations (low_instance param).
     """
     ## Number of rows with non zero element :
-    keep_rows = np.where((term_frequency != 0).sum(axis=0) > low_instance)[0]
+    keep_rows = np.where((term_frequency != 0).sum(axis=0) > low_instance)[0]   # removes code words if they dont appear in a minimum number of videos
+    # keep_rows = np.where(term_frequency.sum(axis=0) > low_instance)[0]        # removes code words if they dont appear a minimum number of times across all videos
+
     ## Sum of the whole column: term_frequency.sum(axis=0) > low_instance
     remove_inds = np.where((term_frequency != 0).sum(axis=0) <= low_instance)[0]
 

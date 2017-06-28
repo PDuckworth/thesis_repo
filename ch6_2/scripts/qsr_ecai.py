@@ -257,8 +257,8 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # static landmarks
     # ****************************************************************************************************
-    static_objects = get_soma_objects()
-    #static_objects = get_point_cloud_objects(os.path.join(path, "point_cloud_object_clusters"))
+    # static_objects = get_soma_objects()
+    static_objects = get_point_cloud_objects(os.path.join(path, "point_cloud_object_clusters"))
     # import pdb; pdb.set_trace()
 
 
@@ -285,7 +285,7 @@ if __name__ == "__main__":
 
     data_subset = False
     frame_rate_reduce = 1     # drop every other frame - before median filter applies
-    mean_window = 11 # use scipy medfilt with the window_size - after down sampling frame rate
+    mean_window = 11          # use scipy medfilt with the window_size - after down sampling frame rate
     qsr_median_window = 5
     tpcc = True
     objects_inc_type = True
@@ -515,6 +515,7 @@ if __name__ == "__main__":
             ids = np.nonzero(histogram)[0]
             # wordids.append(ids)
             # wordcts.append(histogram[ids])
+
             data_to_store = (uuid, label, ids, histogram[ids])
             f = open(qsr_path + "/%s.p" % task, "w")
             pickle.dump(data_to_store, f, 2)
