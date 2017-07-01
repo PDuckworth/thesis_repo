@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 
 def run_svm(data, labels):
 
-
     pred_labels, true_labels = [], []
 
     for fold in [0,1,2,3,4]:  #folds
@@ -50,6 +49,7 @@ def run_svm(data, labels):
              metrics.normalized_mutual_info_score(true_labels, pred_labels),
              metrics.accuracy_score(true_labels, pred_labels))
 
+    return 
 
 def kmeans_clustering(data, true_labels, threshold=0.01):
 

@@ -10,10 +10,12 @@ import copy
 import lda
 from scipy.stats import threshold
 from sklearn import metrics
+from sklearn.utils.extmath import randomized_svd
 import matplotlib.pyplot as plt
 import ch6_2.onlineldavb as OLDA
 import ch6_2.visualisations as vis
 import ch6_2.ECAI_videos_segmented_by_day as vids #  segmented_videos, random_segmented_videos
+
 
 def term_frequency_mat(codebook_length, wordids, wordcnts):
     term_freq = []
@@ -265,7 +267,7 @@ if __name__ == "__main__":
     n_iters = 200
     n_topics = 11
     # create_graphlet_images = False
-    dirichlet_params = (0.5, 0.01)
+    dirichlet_params = (0.005, 0.01)
     # class_thresh = 0.3
     # _lambda = 0.5
     # _lambda = 0
@@ -274,7 +276,7 @@ if __name__ == "__main__":
 
     ### load file of dates vs clips
     videos_by_day = vids.segmented_videos()            # actually per day
-    # videos_by_day = vids.random_segmented_videos()   # random
+    #videos_by_day = vids.random_segmented_videos()   # random
 
     # ****************************************************************************************************
     # load qsr videos
@@ -298,7 +300,6 @@ if __name__ == "__main__":
             except:
                 "failed to load properly: \n %s" % (video)
 
-
         wordids_b.append(ids)
         wordcts_b.append(histogram)
         video_names_b.append(video)
@@ -314,8 +315,8 @@ if __name__ == "__main__":
     # Batch LDA
     # ****************************************************************************************************
     term_freq = term_frequency_mat(codebook_length, wordids_b, wordcts_b)
-    model =  run_topic_model(term_freq, n_iters, n_topics, dirichlet_params)
 
+    model =  run_topic_model(term_freq, n_iters, n_topics, dirichlet_params)
     ### Results on batch day one :)
     videos, thresholded_true, pred_labels = [], [], []
     for n, gam in enumerate(model.doc_topic_):
@@ -323,8 +324,11 @@ if __name__ == "__main__":
             thresholded_true.append(true_labels_b[n])
             pred_labels.append(np.argmax(gam))
             videos.append(video_names_b[n])
-
     n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, n_topics)
+
+
+    ### Number of topics?
+    # U, Sigma, VT = randomized_svd(term_freq, n_components=1000, n_iter=5, random_state=None)
 
     # ****************************************************************************************************
     # Get Incremental videos
@@ -374,7 +378,7 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     K = n_topics
     D = 400
-    alpha, eta = 0.1, 0.01
+    alpha, eta = 0.005, 0.03
     tau0 = 1
     kappa = 0.7
     updatect = 0
@@ -398,7 +402,6 @@ if __name__ == "__main__":
     #     new_codebook_lengths = per_video_codebook_length[st:en]
 
     #minibatches within the day
-    test = []
     batchsize = 5
     num_iters = int(len(wordids)/float(batchsize))
 
@@ -413,12 +416,15 @@ if __name__ == "__main__":
         new_codebook_lengths = per_video_codebook_length[i*batchsize:(i+1)*batchsize]
 
         new_codebook_length = max(new_codebook_lengths)+1
+
         if new_codebook_length != codebook_length:
             olda.add_new_features(new_codebook_length)
-            # print "new code book length:", new_codebook_length
+            print "new code book length:", new_codebook_length
 
         (gamma, bound) = olda.update_lambda(ids, cts, False)
         # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
+        # import pdb; pdb.set_trace()
+
         for n, gam in enumerate(gamma):
             gam = gam / float(sum(gam))
 
@@ -427,9 +433,8 @@ if __name__ == "__main__":
                 pred_labels.append(np.argmax(gam))
 
         #add a new topic each day
-
-        if i*5 in [0, 175, 210, 240, 340]:
-            olda.add_new_topics(1)
+        # if i*5 in [0, 175, 210, 240, 340]:
+        #     olda.add_new_topics(1)
 
         #results:
         n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
@@ -445,7 +450,7 @@ if __name__ == "__main__":
         new_codebook_length = max(new_codebook_lengths)+1
         if new_codebook_length != codebook_length:
             olda.add_new_features(new_codebook_length)
-            # print "new code book length:", new_codebook_length
+            print "new code book length:", new_codebook_length
 
         (gamma, bound) = olda.update_lambda(ids, cts, False)
         # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
@@ -456,14 +461,11 @@ if __name__ == "__main__":
                 thresholded_true.append(labels[n])
                 pred_labels.append(np.argmax(gam))
 
-            #results:
-            n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
-
+        #results:
+        n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
 
     mat = confusion_mat(thresholded_true, pred_labels, olda._K)
     all_video_names_in_order = video_names_b + video_names
-
-    import pdb; pdb.set_trace()
 
     f1 = open(directory+'/document_assignments.p', 'w')
     pickle.dump(pred_labels, f1, 2)
