@@ -14,7 +14,7 @@ from sklearn.utils.extmath import randomized_svd
 import matplotlib.pyplot as plt
 import ch6_2.onlineldavb as OLDA
 import ch6_2.visualisations as vis
-import ch6_2.ECAI_videos_segmented_by_day as vids #  segmented_videos, random_segmented_videos
+import ch6_2.ECAI_videos_segmented_by_day as vids_ #  segmented_videos, random_segmented_videos
 
 
 def term_frequency_mat(codebook_length, wordids, wordcnts):
@@ -69,10 +69,10 @@ def print_results(true_labels, pred_labels, num_clusters):
     set_of_true_labs = list(set(true_labels))
 
     (h, c, v) =  metrics.homogeneity_completeness_v_measure(true_labels, pred_labels)
-    print "#Topics=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f." \
-      % (num_clusters, len(pred_labels), v, h, c,
-        metrics.mutual_info_score(true_labels, pred_labels),
-        metrics.normalized_mutual_info_score(true_labels, pred_labels) )
+    # print "#Topics=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f." \
+    #   % (num_clusters, len(pred_labels), v, h, c,
+    #     metrics.mutual_info_score(true_labels, pred_labels),
+    #     metrics.normalized_mutual_info_score(true_labels, pred_labels) )
 
     return    (num_clusters, len(pred_labels),
            metrics.v_measure_score(true_labels, pred_labels),
@@ -266,17 +266,21 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     n_iters = 200
     n_topics = 11
-    # create_graphlet_images = False
-    dirichlet_params = (0.005, 0.01)
-    # class_thresh = 0.3
-    # _lambda = 0.5
-    # _lambda = 0
-    # using_language = False
+
+
+    prior_on_topic = 0.005
+    prior_on_words = 0.01
+
+    # alpha = 0.005  # over topic
+    # eta = 0.01  # over words
+
+    dirichlet_params = (prior_on_topic, prior_on_words)
+
     assign_class_thresh = 0.0
 
     ### load file of dates vs clips
-    videos_by_day = vids.segmented_videos()            # actually per day
-    #videos_by_day = vids.random_segmented_videos()   # random
+    videos_by_day = vids_.segmented_videos()            # actually per day
+    #videos_by_day = vids_.random_segmented_videos()   # random
 
     # ****************************************************************************************************
     # load qsr videos
@@ -326,7 +330,6 @@ if __name__ == "__main__":
             videos.append(video_names_b[n])
     n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, n_topics)
 
-
     ### Number of topics?
     # U, Sigma, VT = randomized_svd(term_freq, n_components=1000, n_iter=5, random_state=None)
 
@@ -371,153 +374,141 @@ if __name__ == "__main__":
 
     minibatch_by_day.append(counter)
     new_codebook_length+=1
-    print "codebook length: ", new_codebook_length
+    # print "codebook length: ", new_codebook_length
 
-    # ****************************************************************************************************
-    # Initiate a VB LDA model
-    # ****************************************************************************************************
-    K = n_topics
-    D = 400
-    alpha, eta = 1.5, 0.65
-    tau0 = 1
-    kappa = 0.7
-    updatect = 0
 
-    #batch codebook size
-    vocab = xrange(codebook_length)  # trick the oLDA to confuse codewords with just IDs.
-    olda = OLDA.OnlineLDA(vocab, K, D, alpha, eta, tau0, kappa, updatect)
-    olda._lambda = model.topic_word_  # check betty :(
-    olda.add_new_topics(1)
-    # minibatch_by_day = [len(videos_by_day[i]) for i in sorted(videos_by_day.keys())]
+    vmeasures = []
+    pred_labels_batch = copy.copy(pred_labels)
+    thresholded_true_batch = copy.copy(thresholded_true)
 
-    # num_days = 4
-    # for iteration in range(0, num_days):
-    #     st = minibatch_by_day[iteration]
-    #     en = minibatch_by_day[iteration+1]
+    alphas = np.arange(0.0001, 4, 0.1) #[0.0001, 0.0005, 0.001, 0.05, 0.1, 0.5] #
+    #etas = np.arange(0.001, 1, 0.05) #[0.0001, 0.0005, 0.001, 0.05, 0.1, 0.5]
+
+    # alphas = [prior_on_words]
+
+    for alpha in alphas:
+
+        # alpha = 0.005 # over words
+        #eta = 0.03    # over topics
+        #alpha = 0.0005
+        eta = 0.55
+        # for eta in etas:
+
+        pred_labels = copy.copy(pred_labels_batch)
+        thresholded_true = copy.copy(thresholded_true_batch)
+
+        # ****************************************************************************************************
+        # Initiate a VB LDA model
+        # ****************************************************************************************************
+        K = n_topics
+        D = 400
+        # alpha = 0.005
+        # eta = 0.03
+        tau0 = 1
+        kappa = 0.7
+        updatect = 0
+
+        #batch codebook size
+        vocab = xrange(codebook_length)  # trick the oLDA to confuse codewords with just IDs.
+        olda = OLDA.OnlineLDA(vocab, K, D, alpha, eta, tau0, kappa, updatect)
+        olda._lambda = model.topic_word_  # check betty :(
+        olda.add_new_topics(1)
+        # minibatch_by_day = [len(videos_by_day[i]) for i in sorted(videos_by_day.keys())]
+
+        # num_days = 4
+        # for iteration in range(0, num_days):
+        #     st = minibatch_by_day[iteration]
+        #     en = minibatch_by_day[iteration+1]
+        #
+        #     ids = wordids[st:en]
+        #     cts = wordcts[st:en]
+        #     vids = video_names[st:en]
+        #     labels = true_labels[st:en]
+        #     new_codebook_lengths = per_video_codebook_length[st:en]
+
+        #minibatches within the day
+        batchsize = 5
+        num_iters = int(len(wordids)/float(batchsize))
+
+        subjects_left_out = len(wordids) - (num_iters*5)
+
+        for i in range(0, num_iters):
+            ids = wordids[i*batchsize:(i+1)*batchsize]
+            cts = wordcts[i*batchsize:(i+1)*batchsize]
+            vids = video_names[i*batchsize:(i+1)*batchsize]
+
+            labels = true_labels[i*batchsize:(i+1)*batchsize]
+            new_codebook_lengths = per_video_codebook_length[i*batchsize:(i+1)*batchsize]
+
+            new_codebook_length = max(new_codebook_lengths)+1
+
+            if new_codebook_length != codebook_length:
+                olda.add_new_features(new_codebook_length)
+                # print "new code book length:", new_codebook_length
+
+            (gamma, bound) = olda.update_lambda(ids, cts, False)
+            # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
+            # import pdb; pdb.set_trace()
+
+            for n, gam in enumerate(gamma):
+                gam = gam / float(sum(gam))
+
+                if max(gam) > assign_class_thresh:
+                    thresholded_true.append(labels[n])
+                    pred_labels.append(np.argmax(gam))
+
+            #add a new topic each day
+            # if i*5 in [0, 175, 210, 240, 340]:
+            #     olda.add_new_topics(1)
+
+            #results:
+            n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
+            continue
+
+        if subjects_left_out>0:
+            ids = wordids[-subjects_left_out:]
+            cts = wordcts[-subjects_left_out:]
+            vids = video_names[-subjects_left_out:]
+            labels = true_labels[-subjects_left_out:]
+            new_codebook_lengths = per_video_codebook_length[-subjects_left_out:]
+
+            new_codebook_length = max(new_codebook_lengths)+1
+            if new_codebook_length != codebook_length:
+                olda.add_new_features(new_codebook_length)
+                print "new code book length:", new_codebook_length
+
+            (gamma, bound) = olda.update_lambda(ids, cts, False)
+            # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
+            for n, gam in enumerate(gamma):
+                gam = gam / float(sum(gam))
+
+                if max(gam) > assign_class_thresh:
+                    thresholded_true.append(labels[n])
+                    pred_labels.append(np.argmax(gam))
+
+            #results:
+            n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
+            print "alpha: ", alpha, "eta", eta, "V-measure: ", v
+            vmeasures.append(v)
+
+
+    print vmeasures
+    import pdb; pdb.set_trace()
+
+    plt.plot(alphas, vmeasures, 'bo')
+    plt.title("LDA Sensitivity Analysis \nalpha", size = 30)
+    plt.xlabel('Dirichlet Hyperparameter alpha', size = 24)
+    plt.ylabel('v-measure', size = 24)
+    plt.xlim((0,alphas[-1]))
+    plt.ylim((0.6,0.7))
+    plt.show()
+
+    plt.show()
     #
-    #     ids = wordids[st:en]
-    #     cts = wordcts[st:en]
-    #     vids = video_names[st:en]
-    #     labels = true_labels[st:en]
-    #     new_codebook_lengths = per_video_codebook_length[st:en]
-
-    #minibatches within the day
-    batchsize = 5
-    num_iters = int(len(wordids)/float(batchsize))
-
-    subjects_left_out = len(wordids) - (num_iters*5)
-
-    for i in range(0, num_iters):
-        ids = wordids[i*batchsize:(i+1)*batchsize]
-        cts = wordcts[i*batchsize:(i+1)*batchsize]
-        vids = video_names[i*batchsize:(i+1)*batchsize]
-
-        labels = true_labels[i*batchsize:(i+1)*batchsize]
-        new_codebook_lengths = per_video_codebook_length[i*batchsize:(i+1)*batchsize]
-
-        new_codebook_length = max(new_codebook_lengths)+1
-
-        if new_codebook_length != codebook_length:
-            olda.add_new_features(new_codebook_length)
-            print "new code book length:", new_codebook_length
-
-        (gamma, bound) = olda.update_lambda(ids, cts, False)
-        # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
-        # import pdb; pdb.set_trace()
-
-        for n, gam in enumerate(gamma):
-            gam = gam / float(sum(gam))
-
-            if max(gam) > assign_class_thresh:
-                thresholded_true.append(labels[n])
-                pred_labels.append(np.argmax(gam))
-
-        #add a new topic each day
-        # if i*5 in [0, 175, 210, 240, 340]:
-        #     olda.add_new_topics(1)
-
-        #results:
-        n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
-        continue
-
-    if subjects_left_out>0:
-        ids = wordids[-subjects_left_out:]
-        cts = wordcts[-subjects_left_out:]
-        vids = video_names[-subjects_left_out:]
-        labels = true_labels[-subjects_left_out:]
-        new_codebook_lengths = per_video_codebook_length[-subjects_left_out:]
-
-        new_codebook_length = max(new_codebook_lengths)+1
-        if new_codebook_length != codebook_length:
-            olda.add_new_features(new_codebook_length)
-            print "new code book length:", new_codebook_length
-
-        (gamma, bound) = olda.update_lambda(ids, cts, False)
-        # print ">>", bound, len(wordids), D, sum(map(sum, cts)), olda._rhot
-        for n, gam in enumerate(gamma):
-            gam = gam / float(sum(gam))
-
-            if max(gam) > assign_class_thresh:
-                thresholded_true.append(labels[n])
-                pred_labels.append(np.argmax(gam))
-
-        #results:
-        n, l, v, h, c, mi, nmi, labs = print_results(thresholded_true, pred_labels, olda._K)
-
-    mat = confusion_mat(thresholded_true, pred_labels, olda._K)
-    all_video_names_in_order = video_names_b + video_names
-
-    f1 = open(directory+'/document_assignments.p', 'w')
-    pickle.dump(pred_labels, f1, 2)
-    f1.close()
-
-    f1 = open(directory+'/topic_words.p' , 'w')
-    pickle.dump(olda._lambda, f1, 2)
-    f1.close()
-
-    # ****************************************************************************************************
-    # Write out results
-    # ****************************************************************************************************
-    name = '/results.txt'
-    f1 = open(directory+name, 'w')
-    f1.write('n_topics: %s \n' % olda._K)
-    f1.write('n_iters: %s \n' % n_iters)
-    f1.write('dirichlet_params: (%s, %s) \n' % (alpha, eta))
-    f1.write('class_thresh: %s \n' % assign_class_thresh)
-    f1.write('code book length: %s \n' % new_codebook_length)
-    # f1.write('sum of all words: %s \n' % sum_of_all_words)
-    f1.write('videos classified: %s \n \n' % len(pred_labels))
-
-    f1.write('v-score: %s \n' % v)
-    f1.write('homo-score: %s \n' % h)
-    f1.write('comp-score: %s \n' % c)
-    f1.write('mi: %s \n' % mi)
-    f1.write('nmi: %s \n \n' % nmi)
-    f1.write('mat: \n')
-
-    headings = ['{:3d}'.format(int(r)) for r in xrange(n_topics)]
-    f1.write('T = %s \n \n' % headings)
-    for row, lab in zip(mat, labs):
-        text_row = ['{:3d}'.format(int(r)) for r in row]
-        f1.write('    %s : %s \n' % (text_row, lab))
-    f1.write('\n')
-    f1.close()
-
-
-    # ****************************************************************************************************
-    # Write out confusion matrix and results
-    # ****************************************************************************************************
-    confusion_dic    = {}
-    for row, lab in zip(mat, labs):
-        confusion_dic[lab] = row
-
-    f1 = open(directory+'/confusion_mat.p', 'w')
-    pickle.dump(mat, f1, 2)
-    f1.close()
-
-    f1 = open(directory+'/confusion_dic.p', 'w')
-    pickle.dump(confusion_dic, f1, 2)
-    f1.close()
+    # f1 = open(directory+'/Sensitivity_alpha.p', 'w')
+    # sens = (alphas, vmeasures)
+    # pickle.dump(sens, f1, 2)
+    # f1.close()
 
 sys.exit(1)
 

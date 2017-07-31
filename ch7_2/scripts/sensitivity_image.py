@@ -1,0 +1,20 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import sys, os
+import cPickle as pickle
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+vs = [0.55603450689449374, 0.62471853896491081, 0.62859953355314147, 0.64010373571268731, 0.65193764556465528, 0.66062604700800209, 0.65693788869458147, 0.64393197361957322, 0.65078751804978163, 0.6534991694803447, 0.65418046065524593, 0.6615953729464733, 0.65794838090092445, 0.66321550281212505, 0.65312725223179591, 0.64995078689192487, 0.645229207046631, 0.63077502335089841, 0.63297199312192609, 0.63297199312192609]
+
+
+alphas = np.arange(0.001, 1, 0.05)
+
+plt.plot(alphas, vs, 'bo')
+plt.title("LDA Sensitivity Analysis \nbeta", size = 22)
+plt.xlabel('Dirichlet Hyperparameter beta', size = 18)
+plt.ylabel('v-measure', size = 18)
+plt.xlim((0,alphas[-1]))
+plt.ylim((0.6,0.7))
+plt.show()
