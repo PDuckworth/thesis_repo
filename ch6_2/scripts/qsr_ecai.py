@@ -257,8 +257,8 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     # static landmarks
     # ****************************************************************************************************
-    # static_objects = get_soma_objects()
-    static_objects = get_point_cloud_objects(os.path.join(path, "point_cloud_object_clusters"))
+    static_objects = get_soma_objects()
+    # static_objects = get_point_cloud_objects(os.path.join(path, "point_cloud_object_clusters"))
     # import pdb; pdb.set_trace()
 
 
@@ -287,10 +287,16 @@ if __name__ == "__main__":
     frame_rate_reduce = 1     # drop every other frame - before median filter applies
     mean_window = 11          # use scipy medfilt with the window_size - after down sampling frame rate
     qsr_median_window = 5
-    tpcc = True
-    objects_inc_type = True
 
-    which_qsr=["argd", "qtcbs"]
+    tpcc = True # run 42-48,49,51, 53
+    # tpcc = False #run 50, 54
+
+    objects_inc_type = True
+    which_qsr=["argd", "qtcbs"] # run 42-48, 50
+    # which_qsr=["qtcbs"]  # run49, run54
+    # which_qsr=["argd"]  # run51, 52
+    # which_qsr = None  # run53
+
     objects_used = ['left_hand', 'right_hand'] #, 'torso']
 
     qsrs_for = []
@@ -310,10 +316,28 @@ if __name__ == "__main__":
             object_types[ob] = "object"
 
     dynamic_args = { "qtcbs": {"qsrs_for" : qsrs_for, "no_collapse": True, "quantisation_factor":0.1, "validate":False },
-                     "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},
+                    "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},  #Run 38 (and 42)
+
+                     # 2 Tests varying each of these values:
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},  # run 43
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.4, 'Near': 0.5, 'Away': 1.0, 'Ignore': 10}},   # run 44
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.35, 'Away': 1.0, 'Ignore': 10}}, # run 45
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.75, 'Away': 1.0, 'Ignore': 10}},   # run 46
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 0.75, 'Ignore': 10}},   # run47
+                    # "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.25, 'Near': 0.5, 'Away': 1.25, 'Ignore': 10}},     # run48
+
                     #  "argd" : {"qsrs_for": qsrs_for, "qsr_relations_and_values": {'Touch': 0.15, 'Near': 0.3, 'Ignore': 10}},
-                     "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 3, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},
+                    # max_rows is considered \rho  and max_eps is considered \eta
+                     # "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},  # run 38 and 42
+                     # "qstag" : {"params" : {"min_rows": 1, "max_rows": 1, "max_eps": 3, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},  #run55
+                     # "qstag" : {"params" : {"min_rows": 1, "max_rows": 1, "max_eps": 5, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},  #run56
+                     # "qstag" : {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 3, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},  #run57
+                    "qstag" : {"params" : {"min_rows": 1, "max_rows": 3, "max_eps": 4, "frames_per_ep": 0, "split_qsrs": False}, "object_types": object_types},  #run58
+
                      "filters" : {"median_filter": {"window": qsr_median_window}}}
+
+    # print "static objects used: ", static_objects.keys()
+
 
     # ****************************************************************************************************
     # Write out a file of arguments
@@ -335,9 +359,9 @@ if __name__ == "__main__":
         objects_used_tpcc = ['left_hand', 'right_hand', 'left_shoulder', 'right_shoulder', 'left_knee', 'right_knee']
         # qsrs_for = [('head', 'torso', ob) if ob not in ['head', 'torso'] and ob != 'head-torso' else () for ob in object_types.keys()]
         qsrs_for_tpcc = [('head', 'torso', ob) for ob in objects_used_tpcc]
-
         object_types['head-torso'] = 'tpcc-plane'
-        dynamic_args["qstag"] = {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4}, "object_types": object_types}
+
+        # dynamic_args["qstag"] = {"params" : {"min_rows": 1, "max_rows": 2, "max_eps": 4}, "object_types": object_types}
         dynamic_args['tpcc'] = {"qsrs_for": qsrs_for_tpcc}
 
         with open(os.path.join(qsr_path, 'dynamic_args.txt'), 'a') as f1:
@@ -468,8 +492,11 @@ if __name__ == "__main__":
             # f = open(qsr_path + "/WorldTraces/%s.p" % task, "w")
             # pickle.dump((map_world, camera_world), f, 2)
 
-            qsrlib_request_message = QSRlib_Request_Message(which_qsr, map_world, dynamic_args)
-            map_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
+            if which_qsr != None:
+                # print("\n>>",dynamic_args["qstag"])
+                qsrlib_request_message = QSRlib_Request_Message(which_qsr, map_world, dynamic_args)
+                map_response_message = qsrlib.request_qsrs(req_msg=qsrlib_request_message)
+
 
             # objects_in_graphs = set([])
             # for igraph in map_response_message.qstag.graphlets.graphlets.values():
@@ -481,8 +508,8 @@ if __name__ == "__main__":
             # print(map_response_message.qstag.graphlets.code_book)
             # print(map_response_message.qstag.graphlets.histogram)
             # print len(map_response_message.qstag.graphlets.histogram)
-            # print objects_in_graphs
-
+            # # print objects_in_graphs
+            # print map_response_message.qstag.graphlets.params
             # ****************************************************************************************************
             # add TPCC relations - from camera_world
             # ****************************************************************************************************
@@ -490,7 +517,11 @@ if __name__ == "__main__":
                 req = QSRlib_Request_Message(which_qsr="tpcc", input_data=camera_world, dynamic_args=dynamic_args)
                 camera_response_message = qsrlib.request_qsrs(req_msg=req)
                 # pretty_print_world_qsr_trace("tpcc", camera_response_message)
-                feature_spaces = [map_response_message.qstag.graphlets, camera_response_message.qstag.graphlets]
+
+                if which_qsr != None:
+                    feature_spaces = [map_response_message.qstag.graphlets, camera_response_message.qstag.graphlets]
+                else:
+                    feature_spaces = [camera_response_message.qstag.graphlets]
             else:
                 feature_spaces =[map_response_message.qstag.graphlets]
 

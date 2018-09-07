@@ -9,7 +9,7 @@ import math
 import multiprocessing as mp
 import itertools
 import matplotlib.pyplot as plt
-import hungarian
+# import hungarian
 # from read_data import *
 # from manage_histograms import *
 from sklearn.metrics.pairwise import cosine_similarity
@@ -172,7 +172,8 @@ def compare_two_LSA_models(topic_word1, code_book1, topic_word2, code_book2, tit
 
     reordering = np.argmax(cosine_matrix, axis=1)
     reordered = cosine_matrix[:,reordering]
-    hungarian_out = hungarian.lap( (np.ones(reordered.shape) - reordered))
+    # hungarian_out = hungarian.lap( (np.ones(reordered.shape) - reordered))
+    hungarian_out = []
 
     matches = []
     print "hungarian alg say: "

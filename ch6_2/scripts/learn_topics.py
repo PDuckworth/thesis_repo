@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import threshold
 import pdb
 import lda
-import pyLDAvis
+# import pyLDAvis
 import ch6_2.onlineldavb as OLDA
 import ch6_2.visualisations as vis
 import ch6_2.create_term_freq as fr
@@ -96,7 +96,7 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     pickle.dump(graphlets, f1, 2)
     f1.close()
 
-    vis.make_radar_plot(model.topic_word_)
+    # vis.make_radar_plot(model.topic_word_)
 
     # ****************************************************************************************************
     # investigate the relevant words in each topic, and see which documents are classified into each topic
@@ -109,7 +109,7 @@ def run_topic_model(term_freq, code_book, graphlets, online_data, directory, n_i
     # ****************************************************************************************************
     # Get results
     # ****************************************************************************************************
-    n, l, v, h, c, mi, nmi, a, mat, labs = vis.print_results(true_labels, pred_labels, n_topics)
+    n, l, v, h, c, mi, nmi, a, mat, labs = vis.print_results(true_labels, pred_labels, n_topics, show=False)
 
     # ****************************************************************************************************
     # Write out results
@@ -411,7 +411,6 @@ if __name__ == "__main__":
     term_freq, online_data, code_book, graphlets = fr.load_term_frequency(directory, run)
     low_pass_instance = 5
 
-
     term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
 
     # # ****************************************************************************************************
@@ -419,7 +418,7 @@ if __name__ == "__main__":
     # # ****************************************************************************************************
     labels = online_data[2]
     supervised.run_svm(term_freq_red, labels)
-    supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
     #
     # # ****************************************************************************************************
     # # call batch LSA
@@ -459,6 +458,6 @@ if __name__ == "__main__":
     kappa = 0.7
     batchsize = 5
 
-    raw_input("run online LDA:")
-    online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0,kappa,batchsize, class_thresh)
-    print "Online LDA done"
+    # raw_input("run online LDA:")
+    # online_lda_model(code_book, graphlets, online_data, directory, K, D, (alpha,eta), tau0,kappa,batchsize, class_thresh)
+    # print "Online LDA done"

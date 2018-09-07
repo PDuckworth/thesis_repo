@@ -595,41 +595,41 @@ if __name__ == "__main__":
     # ****************************************************************************************************
     low_pass_instance = 15
     term_freq, online_data, code_book, graphlets = load_term_frequency(directory, run)
-    term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
-
-    # # ****************************************************************************************************
-    # # Supervised SVM
-    # # ****************************************************************************************************
-    labels = online_data[2]
-
-    # supervised.run_svm(term_freq_red, labels)
-    # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # term_freq_red, code_book_red, graphlets_red =  fr.high_instance_code_words(term_freq, code_book, graphlets, low_pass_instance)
+    #
+    # # # ****************************************************************************************************
+    # # # Supervised SVM
+    # # # ****************************************************************************************************
+    # labels = online_data[2]
+    #
+    # # supervised.run_svm(term_freq_red, labels)
+    # # supervised.kmeans_clustering(term_freq_red, labels, threshold=0.01)
+    # #
+    # # # ****************************************************************************************************
+    # # # call batch LSA
+    # # # ****************************************************************************************************
+    # # print "\nLSA: "
+    # # lsa.svd_clusters(term_freq_red, labels)
+    #
+    # # print "\Random clustering: "
+    # # lsa.svd_clusters(term_freq_red, labels, n_comps=10, random=True)
+    # # print "LSA done"
+    # #
     #
     # # ****************************************************************************************************
-    # # call batch LSA
+    # # call batch LDA
     # # ****************************************************************************************************
-    # print "\nLSA: "
-    # lsa.svd_clusters(term_freq_red, labels)
-
-    # print "\Random clustering: "
-    # lsa.svd_clusters(term_freq_red, labels, n_comps=10, random=True)
-    # print "LSA done"
+    # print "\nLDA: "
+    # n_iters = 500
+    # n_topics = 11
+    # alpha, eta = 0.8, 0.03
+    # class_thresh = 0.5
+    # _lambda = 0.5 # relevance scale
     #
-
-    # ****************************************************************************************************
-    # call batch LDA
-    # ****************************************************************************************************
-    print "\nLDA: "
-    n_iters = 500
-    n_topics = 11
-    alpha, eta = 0.8, 0.03
-    class_thresh = 0.5
-    _lambda = 0.5 # relevance scale
-
-    directory = os.path.join(directory, "QSR_path/run_%s" % run)
-
-    doc_topic, topic_word = just_topic_model(term_freq_red, n_iters, n_topics, (alpha, eta))
-
-    nonsegmented_evaluation(doc_topic, labels, class_thresh)
-
-    print "LDA done"
+    # directory = os.path.join(directory, "QSR_path/run_%s" % run)
+    #
+    # doc_topic, topic_word = just_topic_model(term_freq_red, n_iters, n_topics, (alpha, eta))
+    #
+    # nonsegmented_evaluation(doc_topic, labels, class_thresh)
+    #
+    # print "LDA done"

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+    #!/usr/bin/env python
 __author__ = 'p_duckworth'
 import sys, os
 import numpy as np
@@ -13,7 +13,7 @@ from matplotlib.path import Path
 from matplotlib.spines import Spine
 from matplotlib.projections.polar import PolarAxes
 from matplotlib.projections import register_projection
-import hungarian
+# import hungarian
 
 def plot_topic_similarity_matrix(cosine_matrix, title=None):
 
@@ -59,7 +59,7 @@ def plot_confusion_matrix(cm, classes, loc = "", title='Confusion matrix', cmap=
     plt.show()
     # %todo: save it somewhere
 
-def print_results(true_labels, pred_labels, num_clusters):
+def print_results(true_labels, pred_labels, num_clusters, show=True):
     (h, c, v) =  metrics.homogeneity_completeness_v_measure(true_labels, pred_labels)
 
     print "#Topics=%s (%s). v-measure: %0.3f. homo: %0.3f. comp: %0.3f. MI: %0.3f. NMI: %0.3f. Acc: %0.3f" \
@@ -112,10 +112,10 @@ def print_results(true_labels, pred_labels, num_clusters):
     plt.yticks(xrange(len(set_of_true_labs)), set_of_true_labs, color='red', fontsize=14)
 
     cmap=plt.cm.Blues
-    plt.imshow(norm_gt, interpolation='nearest', cmap=cmap)
+    if show: plt.imshow(norm_gt, interpolation='nearest', cmap=cmap)
 
-    plt.tight_layout()
-    plt.colorbar()
+    if show: plt.tight_layout()
+    if show: plt.colorbar()
 
     # reorder = np.argmax(mat, axis=1)
     # reorder = [3, 8, 1 , 5, 0, 2, 4, 7, 6, 9]
@@ -136,9 +136,9 @@ def print_results(true_labels, pred_labels, num_clusters):
     # plt.setp((ax), xticks=range(len(mat[0])), yticks=xrange(len(set_of_true_labs)))
 
     plt.yticks(xrange(len(set_of_true_labs)), set_of_true_labs, color='red', fontsize=14)
-    plt.imshow(reordered_mat, interpolation='nearest', cmap=cmap)
-    plt.colorbar()
-    plt.show()
+    if show: plt.imshow(reordered_mat, interpolation='nearest', cmap=cmap)
+    if show: plt.colorbar()
+    if show: plt.show()
 
     # width, height = reordered.shape
     # for x in xrange(width):
@@ -156,9 +156,9 @@ def print_results(true_labels, pred_labels, num_clusters):
     # plt.setp((ax), xticks=range(len(mat[0])), yticks=xrange(len(set_of_true_labs)))
 
     plt.yticks(xrange(len(set_of_true_labs)), set_of_true_labs, color='red', fontsize=14)
-    plt.imshow(norm_topics[:, ordering], interpolation='nearest', cmap=cmap)
-    plt.colorbar()
-    plt.show()
+    if show: plt.imshow(norm_topics[:, ordering], interpolation='nearest', cmap=cmap)
+    if show: plt.colorbar()
+    if show: plt.show()
 
 
     return (num_clusters, len(pred_labels),
